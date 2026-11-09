@@ -365,7 +365,13 @@ $('setupYearBtn').onclick=()=>{
   $('yearSetup').innerHTML=h;
   $('decide').classList.remove('hidden');$('yearResult').innerHTML='';
   buildDecTable();
+  resetAiBridge();
 };
+function resetAiBridge(){
+  $('promptOut').textContent='';$('promptOut').classList.add('hidden');
+  $('copyPromptBtn').disabled=true;$('copyPromptBtn').textContent='Copy prompt';
+  $('aiIn').value='';$('aiMsg').innerHTML='';
+}
 
 function buildDecTable(){
   let h='<tr><th>Account</th><th>Trades (one year)</th><th>Withdraw (maf)</th></tr>';
@@ -498,6 +504,7 @@ $('applyAiBtn').onclick=()=>{
   if(res.errors){$('aiMsg').innerHTML='<div class="badbox"><b>Rejected — fix and repaste:</b><ul class="tight"><li>'+res.errors.join('</li><li>')+'</li></ul></div>';return;}
   $('aiMsg').innerHTML='';
   applyAndRender(res,dec,'AI role-play via copy/paste bridge');
+  resetAiBridge();
 };
 
 function renderKpis(){
