@@ -473,10 +473,19 @@ $('copyPromptBtn').onclick=()=>{
   else{const r=document.createRange();r.selectNodeContents($('promptOut'));const s=getSelection();s.removeAllRanges();r&&s.addRange(r);document.execCommand('copy');$('copyPromptBtn').textContent='Copied';}
 };
 
+function cleanJsonInput(raw){
+  let t=String(raw||'');
+  t=t.replace(/[\u201C\u201D\u201E\u201F\u2033]/g,'"').replace(/[\u2018\u2019\u201A\u201B\u2032]/g,"'");
+  t=t.replace(/```(?:json|JSON)?/g,'');
+  const start=t.indexOf('{'),end=t.lastIndexOf('}');
+  if(start<0||end<=start) return t.trim();
+  return t.slice(start,end+1);
+}
+
 $('applyAiBtn').onclick=()=>{
   if($('aiIn').value.length>50000){$('aiMsg').innerHTML='<div class="badbox">Response too large (over 50,000 characters) - paste only the JSON decision object.</div>';return;}
   let obj;
-  try{obj=JSON.parse($('aiIn').value);}catch(e){$('aiMsg').innerHTML='<div class="badbox">Not valid JSON: '+String(e.message||e)+'</div>';return;}
+  try{obj=JSON.parse(cleanJsonInput($('aiIn').value));}catch(e){$('aiMsg').innerHTML='<div class="badbox">Not valid JSON: '+String(e.message||e)+'</div>';return;}
   if(!obj||typeof obj!=='object'||!obj.decisions){$('aiMsg').innerHTML='<div class="badbox">Missing top-level "decisions" object.</div>';return;}
   const dec={rec:{withdraw:0,trades:[]}};
   for(const id of USERS){
