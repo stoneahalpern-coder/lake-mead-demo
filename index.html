@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lake Mead Water Bank — AI Stakeholder Session</title>
+<style>
+  :root{
+    --ink:#0f172a; --muted:#475569; --line:#e2e8f0; --bg:#f4f7fb; --card:#ffffff;
+    --water:#0369a1; --water-soft:#e0f2fe; --warn:#b45309; --warn-bg:#fef3c7;
+    --ok:#047857; --ok-bg:#d1fae5; --bad:#b91c1c; --bad-bg:#fee2e2;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);line-height:1.45}
+  .wrap{max-width:1060px;margin:0 auto;padding:24px 16px 64px}
+  header.hero{background:linear-gradient(135deg,#0c4a6e,#0369a1);color:#fff;border-radius:16px;padding:28px 26px;margin-bottom:20px}
+  header.hero h1{margin:0 0 8px;font-size:26px;letter-spacing:-.01em}
+  header.hero p{margin:0 0 14px;color:#dbeafe;max-width:820px}
+  .badges{display:flex;flex-wrap:wrap;gap:8px}
+  .badge{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:3px 11px;font-size:12.5px;color:#f0f9ff}
+  section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin-bottom:18px}
+  h2{margin:0 0 6px;font-size:19px}
+  h3{margin:18px 0 6px;font-size:15px}
+  .sub{color:var(--muted);font-size:13.5px;margin:0 0 12px}
+  .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .step{background:var(--water-soft);border:1px solid #bae6fd;border-radius:10px;padding:12px 14px;font-size:13.5px}
+  .step b{display:block;color:#075985;margin-bottom:3px}
+  .row{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end}
+  label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:3px}
+  select,input[type=number],input[type=text]{font:inherit;font-size:14px;padding:7px 9px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:var(--ink)}
+  button{font:inherit;font-size:14px;font-weight:600;border:0;border-radius:9px;padding:9px 16px;cursor:pointer;background:var(--water);color:#fff}
+  button.ghost{background:#fff;color:var(--water);border:1px solid var(--water)}
+  button.ghost.sel{background:var(--water);color:#fff}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button.small{padding:5px 10px;font-size:12.5px}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th,td{border:1px solid var(--line);padding:6px 8px;text-align:right;vertical-align:top}
+  th{background:#f1f5f9;text-align:right;font-size:12px;color:var(--muted)}
+  th:first-child,td:first-child{text-align:left}
+  .acct-chip{display:inline-flex;align-items:center;gap:6px;font-weight:600;white-space:nowrap}
+  .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+  .note{font-size:12.5px;color:var(--muted)}
+  .okbox,.warnbox,.badbox{border-radius:10px;padding:10px 14px;font-size:13.5px;margin:10px 0}
+  .okbox{background:var(--ok-bg);color:#065f46;border:1px solid #6ee7b7}
+  .warnbox{background:var(--warn-bg);color:#92400e;border:1px solid #fcd34d}
+  .badbox{background:var(--bad-bg);color:#991b1b;border:1px solid #fca5a5}
+  .pill{display:inline-block;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:700}
+  .pill.ok{background:var(--ok-bg);color:var(--ok)} .pill.bad{background:var(--bad-bg);color:var(--bad)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  textarea{width:100%;min-height:150px;font:12.5px/1.5 ui-monospace,Menlo,monospace;border:1px solid #cbd5e1;border-radius:8px;padding:10px}
+  .promptbox{background:#0f172a;color:#e2e8f0;border-radius:10px;padding:14px;font:12px/1.5 ui-monospace,Menlo,monospace;white-space:pre-wrap;max-height:300px;overflow:auto}
+  .strategy{font-size:12px;color:var(--muted)}
+  .tabs{display:flex;gap:8px;margin:4px 0 14px}
+  .hidden{display:none}
+  ul.tight{margin:6px 0 6px 18px;padding:0} ul.tight li{margin:3px 0;font-size:13.5px}
+  a{color:var(--water)}
+  footer{color:var(--muted);font-size:12.5px;text-align:center;margin-top:26px}
+  .kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0}
+  .kpi .k{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#f8fafc}
+  .kpi .v{font-size:19px;font-weight:700} .kpi .l{font-size:11.5px;color:var(--muted)}
+  @media (max-width:760px){ .steps,.grid2{grid-template-columns:1fr} .kpi{grid-template-columns:repeat(2,1fr)} th,td{padding:5px 5px;font-size:12px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <h1>Lake Mead Water Bank — AI Stakeholder Session</h1>
+  <p>A browser adaptation of David Rosenberg &amp; Anabelle Myers' immersive Lake Mead model ("Divide Reservoir Inflow," Utah State University), rebuilt so the six stakeholder accounts can be played by AI or by hand. 301 Tech Policy show-and-tell artifact.</p>
+  <div class="badges">
+    <span class="badge">Built with AI assistance</span>
+    <span class="badge">Adaptation — documented simplifications, see Methods</span>
+    <span class="badge">Single file · no install · accounting runs offline</span>
+  </div>
+</header>
+
+<section id="how">
+  <h2>How a year works</h2>
+  <p class="sub">The model's three-step loop (Model Guide, Introduction). All volumes in million acre-feet (maf); prices in $ per acre-foot.</p>
+  <div class="steps">
+    <div class="step"><b>A. Divide reservoir inflow</b>An inflow scenario is entered. Reclamation receives a first block exactly offsetting its evaporation share (this holds the protection elevation). The rest is divided among users by shares derived from the 2024 Lower Basin Alternative shortage splits, with Tribal Nations' settled rights taken off the top.</div>
+    <div class="step"><b>B. Subtract evaporation</b>Lake evaporation (6.0 ft/yr × surface area at the current elevation, official USBR area-capacity tables) is charged to each account in proportion to its balance.</div>
+    <div class="step"><b>C. Trade, withdraw, conserve</b>Each account may buy/sell water for one year at an agreed $/af (compensation is computed), then withdraws within its available water. Whatever is left is banked for future years. Trades must net to zero.</div>
+  </div>
+</section>
+
+<section id="setup">
+  <h2>1 · Session setup</h2>
+  <p class="sub">Start storage and the protection elevation are session inputs in the published model (Guide Steps 1–3).</p>
+  <div class="row">
+    <div>
+      <label for="startSel">Starting condition</label>
+      <select id="startSel">
+        <option value="current">USBR snapshot — Oct 2026: 1,038.85 ft (6.90 maf)</option>
+        <option value="guide">Guide worked example — 1,055 ft (8.05 maf)</option>
+      </select>
+    </div>
+    <div>
+      <label for="protSel">Protection elevation (Reclamation account)</label>
+      <select id="protSel">
+        <option value="1020">1,020 ft — 5.665 maf (2019 DCP default)</option>
+        <option value="1000">1,000 ft — 4.475 maf (lower-protection option)</option>
+      </select>
+    </div>
+    <div><button id="startBtn">Start session</button></div>
+  </div>
+  <p class="note" style="margin-top:10px">The snapshot uses the October 2026 value from USBR's Lake Mead monthly elevation table (page updated Nov 2, 2026) — a dated snapshot, not a live reading. Storage above the protection volume is split among the five user accounts pro-rata to historical allocations, the Guide's suggested default for the Step 3 joint choice (CA 4.4 · AZ 2.8 · NV 0.3 · MX 1.5 · Tribal 0.95 maf). The published model lets participants negotiate this split.</p>
+  <div id="setupOut"></div>
+</section>
+
+<section id="play" class="hidden">
+  <h2>2 · Play the session</h2>
+  <div class="kpi" id="kpis"></div>
+
+  <h3>Year <span id="yrNum">1</span> — choose Lake Mead inflow</h3>
+  <div class="row">
+    <div class="tabs" id="scenBtns">
+      <button class="ghost small" data-inflow="9.0">Average · 9.0</button>
+      <button class="ghost small" data-inflow="7.5">1.5 maf shortage · 7.5</button>
+      <button class="ghost small" data-inflow="6.3">Extreme low · 6.3</button>
+    </div>
+    <div>
+      <label for="inflowIn">Inflow (maf/yr)</label>
+      <input type="number" id="inflowIn" value="9.0" step="0.1" min="3" max="16" style="width:110px">
+    </div>
+    <div><button class="ghost" id="setupYearBtn">Compute year setup</button></div>
+  </div>
+  <p class="note">Historical Mead inflow since 1990 ranged 8–16 maf/yr, mostly 9–10; the Guide's extreme-low ensembles go well below that (Guide Step 2). Shortage shares below derive from the 2024 Lower Basin Alternative percentages used in the Guide's Table 4a.</p>
+  <div id="yearSetup"></div>
+
+  <div id="decide" class="hidden">
+    <h3>Decisions — who is playing?</h3>
+    <div class="tabs">
+      <button class="ghost small sel" id="tabManual">Manual play</button>
+      <button class="ghost small" id="tabAI">Live AI bridge</button>
+    </div>
+
+    <div id="panelManual">
+      <p class="note">Enter each account's one-year trades and withdrawal, then settle the year. Buys are +, sells are −. Reference price points from the Guide: the 500-Plus Plan paid about $400/af ($200M for 0.5 maf/yr) and the Guide's worked trade example uses $500/af. Trades are temporary (one year) and must net to zero across all accounts.</p>
+      <div style="overflow-x:auto"><table id="decTable"></table></div>
+      <div id="manMsg"></div>
+      <button id="settleBtn" style="margin-top:10px">Validate &amp; settle year</button>
+    </div>
+
+    <div id="panelAI" class="hidden">
+      <p class="note"><b>How this works:</b> copy the generated prompt into your own AI chat (for example claude.ai on this Mac — whatever account you have). One AI conversation writes the five user roles' decisions as JSON (the Reclamation protection volume is held fixed); paste the JSON back here. This page validates it (bilateral matching trades, withdrawals within available water, price bounds) and runs the accounting. The AI chat step needs internet; everything else runs offline. Decisions are LLM role-play from a single conversation — not independent agents. The AI's text is never rendered as HTML.</p>
+      <div class="row" style="margin-bottom:8px"><button class="ghost" id="genPromptBtn">Generate prompt for this year</button><button class="ghost" id="copyPromptBtn" disabled>Copy prompt</button></div>
+      <div class="promptbox hidden" id="promptOut"></div>
+      <label for="aiIn" style="margin-top:10px">Paste the AI's JSON response</label>
+      <textarea id="aiIn" placeholder='{"decisions": {"ca": {"withdraw": 3.6, "trades": [{"with":"tr","maf":0.2,"price_per_af":650}], "rationale":"..."}, ...}}'></textarea>
+      <div id="aiMsg"></div>
+      <button id="applyAiBtn" style="margin-top:8px">Validate &amp; settle year</button>
+    </div>
+  </div>
+
+  <div id="yearResult"></div>
+</section>
+
+<section id="history" class="hidden">
+  <h2>3 · Session history</h2>
+  <div id="chartWrap"></div>
+  <div style="overflow-x:auto"><table id="histTable"></table></div>
+  <div class="row" style="margin-top:12px"><button class="ghost small" id="undoBtn">Undo last year</button><button class="ghost small" id="resetBtn">Reset session</button></div>
+</section>
+
+<section id="methods">
+  <h2>Methods, simplifications, sources</h2>
+  <h3>Implemented from the published Model Guide</h3>
+  <ul class="tight">
+    <li>Accounts: Reclamation, California, Arizona, Nevada, Mexico, Tribal Nations of the Lower Basin (Guide Step 1).</li>
+    <li>Evaporation: 6.0 ft/yr × lake surface area at current storage, split among accounts in proportion to balances (Guide 1B.i, 3B). Surface area and storage↔elevation use the official USBR Lake Mead area-capacity tables (2001/2009 survey) — the same family of data the Guide's spreadsheet uses. Cross-check: at 1,055 ft the tables give 74,000 acres → 0.444 maf/yr, matching the Guide's worked example of 0.44 maf.</li>
+    <li>Inflow division: Reclamation first receives a block offsetting its evaporation share, which holds the protection volume constant while inflow covers the offset (Guide Step 4); below that, the protection volume erodes — the model guarantees no floor. The remainder is divided by the Guide's Table 4a default: Tribal Nations take 0.95 − 0.106 × shortage off the top (Ten Tribes Partnership settled rights); states take historical allocation minus their 2024 Lower Basin Alternative share of the shortage (AZ 43%, CA 36.7%, Mexico 16.7%, NV 3.6% of the total shortage) minus their locational share of tribal water (AZ 82.2%, CA 16.4%, NV 1.3%). Verified against the Guide's own worked example at 6.3 maf inflow (CA 3.30, AZ 1.08, Mexico 1.05, Tribal 0.67).</li>
+    <li>Dashboards: one-year buy/sell trades at an agreed $/af with compensation computed (Guide Step 5); net trades must sum to zero; withdrawals limited to available water; balances carry over year to year (Steps 5–7).</li>
+    <li>Mass balance is exact every year: end-of-year lake storage = start + inflow − evaporation − total withdrawals. Raw user shares from the Guide's rounded coefficients (the tribal location percentages sum to 99.9%) exceed the entered inflow by 0.011% throughout the shortage regime; shares are normalized to the divisible inflow so water balances exactly. Above the 9.0 maf full-allocation basis the Guide's table has no shortage row, so shares are scaled proportionally — an extension beyond the documented rules.</li>
+  </ul>
+  <h3>Documented simplifications and omissions</h3>
+  <ul class="tight">
+    <li>This is an <b>adaptation</b> of the published model, not the authors' spreadsheet. The mandatory-conservation cutback schedule and real ICS account balances live in the authors' Google Sheets/Excel file, which is not in the public repository; both are omitted. Shortage sharing enters through the inflow split above instead.</li>
+    <li>The Step 3 initial storage split is a negotiated joint choice in the published model; here it defaults to the Guide's pro-rata suggestion.</li>
+    <li>Protection elevation is fixed at session start (1,020 or 1,000 ft). Mid-session changes are possible in the full model.</li>
+    <li>Only two price points are documented in the Guide: about $400/af (500-Plus Plan, $200M for 0.5 maf/yr) and the $500/af worked trade example. Any price entered in play (like the $650/af in a test session) is the player's or AI's own choice within the 0–10,000 $/af bound — an illustration of the mechanism, not a documented or predicted price.</li>
+  </ul>
+  <h3>AI disclosure</h3>
+  <ul class="tight">
+    <li>Manual mode: every decision is entered by the human player, as in the original model.</li>
+    <li>Live AI bridge: one AI conversation writes the five user roles' decisions per year via a copy/paste bridge (LLM role-play, not independent agents; the page makes no autonomous AI calls). The Reclamation account is fixed. The page validates every number and computes all accounting itself.</li>
+    <li>This page was built with AI assistance. It is a teaching artifact, not water law and not policy findings.</li>
+  </ul>
+  <h3>Sources</h3>
+  <ul class="tight">
+    <li>Rosenberg, D.E. &amp; Myers, A. (2025). <i>Model Guide: Immersive Model for Lake Mead Based on the Principle of Divide Reservoir Inflow.</i> Utah State University. <a href="https://github.com/dzeke/ColoradoRiverCollaborate/blob/main/LakeMeadWaterBankDivideInflow/ModelGuide/ModelGuide-LakeMeadWaterBank.md">Model Guide</a> · <a href="https://github.com/dzeke/ColoradoRiverCollaborate/tree/main/LakeMeadWaterBankDivideInflow">repository</a> (BSD 3-Clause license).</li>
+    <li>USBR, <i>Lake Mead Area and Capacity Tables</i> (2001/2009 surveys): <a href="https://www.usbr.gov/lc/region/g4000/LM_AreaCapacityTables2009.pdf">usbr.gov/lc/region/g4000/LM_AreaCapacityTables2009.pdf</a></li>
+    <li>USBR, Lake Mead monthly elevations: <a href="https://www.usbr.gov/lc/region/g4000/hourly/mead-elv.html">usbr.gov/lc/region/g4000/hourly/mead-elv.html</a> (Oct 2026 snapshot, page updated Nov 2, 2026).</li>
+  </ul>
+</section>
+
+<footer>Built with AI assistance for Stone Halpern · 301 Tech Policy show-and-tell · November 10, 2026</footer>
+</div>
+
+<script>
+// ===PURE-START===
+// Official USBR Lake Mead area-capacity tables (2001/2009 survey), 1-ft grid, 895-1100 ft.
+const ELEV=[895,896,897,898,899,900,901,902,903,904,905,906,907,908,909,910,911,912,913,914,915,916,917,918,919,920,921,922,923,924,925,926,927,928,929,930,931,932,933,934,935,936,937,938,939,940,941,942,943,944,945,946,947,948,949,950,951,952,953,954,955,956,957,958,959,960,961,962,963,964,965,966,967,968,969,970,971,972,973,974,975,976,977,978,979,980,981,982,983,984,985,986,987,988,989,990,991,992,993,994,995,996,997,998,999,1000,1001,1002,1003,1004,1005,1006,1007,1008,1009,1010,1011,1012,1013,1014,1015,1016,1017,1018,1019,1020,1021,1022,1023,1024,1025,1026,1027,1028,1029,1030,1031,1032,1033,1034,1035,1036,1037,1038,1039,1040,1041,1042,1043,1044,1045,1046,1047,1048,1049,1050,1051,1052,1053,1054,1055,1056,1057,1058,1059,1060,1061,1062,1063,1064,1065,1066,1067,1068,1069,1070,1071,1072,1073,1074,1075,1076,1077,1078,1079,1080,1081,1082,1083,1084,1085,1086,1087,1088,1089,1090,1091,1092,1093,1094,1095,1096,1097,1098,1099,1100,1101,1102,1103,1104,1105,1106,1107,1108,1109,1110,1111,1112,1113,1114,1115,1116,1117,1118,1119,1120,1121,1122,1123,1124,1125,1126,1127,1128,1129,1130,1131,1132,1133,1134,1135,1136,1137,1138,1139,1140,1141,1142,1143,1144,1145,1146,1147,1148,1149,1150,1151,1152,1153,1154,1155,1156,1157,1158,1159,1160,1161,1162,1163,1164,1165,1166,1167,1168,1169,1170,1171,1172,1173,1174,1175,1176,1177,1178,1179,1180,1181,1182,1183,1184,1185,1186,1187,1188,1189,1190,1191,1192,1193,1194,1195,1196,1197,1198,1199,1200,1201,1202,1203,1204,1205,1206,1207,1208,1209,1210,1211,1212,1213,1214,1215,1216,1217,1218,1219,1220,1221,1222,1223,1224,1225,1226,1227,1228,1229];
+const AREA=[30200,30400,30600,30800,31000,31200,31400,31600,31900,32100,32400,32600,32800,33100,33300,33600,33800,34000,34300,34500,34700,35000,35200,35500,35700,35900,36200,36400,36600,36800,37100,37300,37500,37700,38000,38200,38400,38700,38900,39100,39400,39600,39800,40100,40300,40500,40800,41000,41200,41500,41700,41900,42200,42400,42600,42900,43100,43400,43600,43900,44200,44400,44700,44900,45200,45500,45700,45900,46200,46400,46700,46900,47100,47400,47600,47800,48100,48400,48700,48900,49200,49500,49700,50000,50300,50500,50800,51100,51400,51700,52000,52300,52600,52900,53200,53500,53800,54100,54400,54700,54900,55200,55500,55800,56100,56400,56700,57000,57300,57600,57900,58200,58500,58900,59200,59500,59800,60100,60400,60700,61000,61300,61600,61900,62200,62500,62800,63200,63500,63800,64100,64400,64700,65000,65300,65600,65900,66300,66600,66900,67200,67600,67900,68200,68500,68800,69200,69500,69800,70200,70500,70900,71200,71500,71900,72200,72600,72900,73300,73700,74000,74400,74700,75100,75500,75800,76200,76600,76900,77300,77600,78000,78400,78700,79100,79500,79800,80100,80500,80800,81100,81500,81800,82200,82500,82800,83200,83500,83800,84100,84400,84800,85100,85400,85700,86000,86300,86700,87000,87300,87600,87900,88200,88600,88900,89300,89600,90000,90400,90700,91100,91600,92000,92400,93000,93400,93900,94300,94700,95100,95500,95900,96300,96600,96900,97300,97600,98000,98400,98800,99300,99700,100200,100600,101100,101500,101900,102300,102800,103200,103700,104800,105500,106100,106600,107100,107700,108200,108700,109200,109700,110200,110800,111300,111800,112300,112900,113600,114100,114600,115200,115600,116200,116800,117400,118000,118600,119200,119800,120400,121100,121800,122500,123200,123800,124700,125400,126100,126900,127700,128400,129100,129800,130500,131200,131800,132400,133100,133700,134300,134900,135600,136200,136900,137600,138200,138900,139500,140200,140900,141600,142200,142900,143500,144200,144800,145500,146200,147100,147800,148500,149300,150000,150600,151300,151900,152600,153200,153800,154400,155000,155500,156100,156600,157100,157700,158300,158900,159500,160100,160700,161200,161800,162300,162900];
+const CAP=[0,30000,61000,91000,122000,153000,185000,216000,248000,280000,312000,345000,377000,410000,443000,477000,511000,544000,579000,613000,648000,683000,718000,753000,789000,824000,860000,897000,933000,970000,1007000,1044000,1081000,1119000,1157000,1195000,1233000,1272000,1311000,1350000,1389000,1428000,1468000,1508000,1548000,1589000,1629000,1670000,1711000,1753000,1794000,1836000,1878000,1920000,1963000,2006000,2049000,2092000,2135000,2179000,2223000,2267000,2312000,2357000,2402000,2447000,2493000,2539000,2585000,2631000,2678000,2724000,2771000,2819000,2866000,2914000,2962000,3010000,3059000,3107000,3156000,3206000,3255000,3305000,3355000,3406000,3456000,3507000,3559000,3610000,3662000,3714000,3767000,3819000,3872000,3926000,3980000,4033000,4088000,4142000,4197000,4252000,4307000,4363000,4419000,4475000,4532000,4589000,4646000,4703000,4761000,4819000,4878000,4936000,4995000,5055000,5114000,5174000,5234000,5295000,5356000,5417000,5478000,5540000,5602000,5665000,5727000,5790000,5854000,5917000,5981000,6045000,6110000,6175000,6240000,6305000,6371000,6437000,6504000,6570000,6638000,6705000,6773000,6841000,6909000,6978000,7047000,7116000,7186000,7256000,7326000,7397000,7468000,7539000,7611000,7683000,7755000,7828000,7901000,7975000,8048000,8123000,8197000,8272000,8347000,8423000,8499000,8575000,8652000,8729000,8807000,8885000,8963000,9041000,9120000,9200000,9279000,9359000,9439000,9520000,9601000,9682000,9764000,9846000,9928000,10011000,10094000,10177000,10261000,10345000,10430000,10514000,10600000,10685000,10771000,10857000,10944000,11030000,11118000,11205000,11293000,11381000,11469000,11557000,11646000,11735000,11825000,11914000,12005000,12095000,12186000,12277000,12369000,12461000,12554000,12647000,12741000,12835000,12929000,13024000,13119000,13215000,13311000,13408000,13504000,13601000,13699000,13797000,13895000,13993000,14092000,14192000,14292000,14392000,14493000,14594000,14696000,14798000,14901000,15004000,15107000,15211000,15316000,15422000,15529000,15635000,15743000,15851000,15959000,16068000,16178000,16288000,16398000,16509000,16621000,16733000,16845000,16959000,17072000,17187000,17302000,17417000,17533000,17649000,17766000,17884000,18002000,18121000,18241000,18361000,18482000,18603000,18725000,18848000,18971000,19096000,19221000,19346000,19473000,19600000,19728000,19857000,19986000,20117000,20247000,20379000,20511000,20644000,20777000,20911000,21046000,21181000,21317000,21453000,21591000,21728000,21867000,22006000,22146000,22287000,22428000,22570000,22712000,22855000,22999000,23144000,23289000,23435000,23581000,23729000,23877000,24026000,24175000,24326000,24477000,24628000,24781000,24934000,25087000,25241000,25396000,25551000,25707000,25863000,26020000,26177000,26335000,26494000,26653000,26813000,26973000,27134000,27296000,27458000,27620000];
+
+const CAPMAF=CAP.map(v=>v/1e6); // capacity in maf; all model math below is in maf
+function interp(x,xs,ys){
+  if(x<=xs[0])return ys[0];
+  if(x>=xs[xs.length-1])return ys[ys.length-1];
+  let lo=0,hi=xs.length-1;
+  while(hi-lo>1){const m=(lo+hi)>>1; if(xs[m]<=x)lo=m; else hi=m;}
+  return ys[lo]+(ys[hi]-ys[lo])*(x-xs[lo])/(xs[hi]-xs[lo]);
+}
+function storageToElev(maf){ // invert CAPMAF (monotonic increasing)
+  if(maf<=CAPMAF[0])return ELEV[0];
+  if(maf>=CAPMAF[CAPMAF.length-1])return ELEV[ELEV.length-1];
+  let lo=0,hi=CAPMAF.length-1;
+  while(hi-lo>1){const m=(lo+hi)>>1; if(CAPMAF[m]<=maf)lo=m; else hi=m;}
+  return ELEV[lo]+(ELEV[hi]-ELEV[lo])*(maf-CAPMAF[lo])/(CAPMAF[hi]-CAPMAF[lo]);
+}
+function storageToArea(maf){return interp(storageToElev(maf),ELEV,AREA);}
+function evapAf(storageMaf){return 6.0*storageToArea(storageMaf)/1e6;} // 6 ft/yr x acres, returned in maf
+
+const ACCOUNTS=[
+  {id:'rec',name:'Reclamation',color:'#64748b',alloc:0,strategy:'Hold the protection elevation (2019 DCP default 1,020 ft). The published model allows lowering it mid-session as a joint policy choice; this adaptation fixes it at session start.'},
+  {id:'ca',name:'California',color:'#2563eb',alloc:4.4,shortShare:0.367,tribalLoc:0.164,strategy:'Cut back from 4.4 maf/yr per shortage sharing; buy water to reduce mandatory conservation; save some for future years (Guide Table 1a).'},
+  {id:'az',name:'Arizona',color:'#d97706',alloc:2.8,shortShare:0.43,tribalLoc:0.822,strategy:'Cut back from 2.8 maf/yr; buy water to reduce mandatory conservation; save some for future years.'},
+  {id:'nv',name:'Nevada',color:'#059669',alloc:0.3,shortShare:0.036,tribalLoc:0.013,strategy:'Cut back from 0.3 maf/yr; buy water; bank savings for future years.'},
+  {id:'mx',name:'Mexico',color:'#dc2626',alloc:1.5,shortShare:0.167,tribalLoc:0,strategy:'Cut back from 1.5 maf/yr; conserve beyond mandatory targets; may lease water to fund non-water projects.'},
+  {id:'tr',name:'Tribal Nations of the Lower Basin',color:'#7c3aed',alloc:0.95,strategy:'Manage 0.95 maf of settled rights independently; about 0.47 currently used; lease settled, undeveloped water to acquire capital; save for future use (Ten Tribes Partnership 2018, via Guide).'}
+];
+const USERS=['ca','az','nv','mx','tr'];
+
+// Guide Table 4a default inflow shares (pre-normalization), inflow in maf, full allocation basis 9.0 maf.
+function rawShares(inflow){
+  const S=Math.max(0,9.0-inflow);
+  const T=0.95-0.106*S;
+  return {ca:4.4-0.367*S-0.164*T, az:2.8-0.43*S-0.822*T, nv:0.3-0.036*S-0.013*T, mx:1.5-0.167*S, tr:T};
+}
+
+function newSession(startStorageMaf, protElevFt){
+  const protVol=interp(protElevFt,ELEV,CAPMAF);
+  const active=Math.max(0,startStorageMaf-protVol);
+  const totAlloc=USERS.reduce((s,id)=>s+ACCOUNTS.find(a=>a.id===id).alloc,0);
+  const bal={rec:protVol};
+  USERS.forEach(id=>{bal[id]=active*ACCOUNTS.find(a=>a.id===id).alloc/totAlloc;});
+  return {protElev:protElevFt,protVol:protVol,bal:bal,year:0,hist:[]};
+}
+
+function yearSetup(st,inflow){
+  const storage=Object.values(st.bal).reduce((a,b)=>a+b,0);
+  const elev=storageToElev(storage), area=storageToArea(storage), evap=evapAf(storage);
+  const out={inflow,storage,elev,area,evap,accounts:{}};
+  const evapShare={};
+  for(const a of ACCOUNTS){evapShare[a.id]=storage>0?evap*st.bal[a.id]/storage:0;}
+  const recIn=Math.min(evapShare.rec,inflow);
+  const R=inflow-recIn;
+  const raw=rawShares(inflow);
+  const sumRaw=USERS.reduce((s,id)=>s+Math.max(0,raw[id]),0);
+  for(const a of ACCOUNTS){
+    const inflowShare=a.id==='rec'?recIn:(sumRaw>0?Math.max(0,raw[a.id])/sumRaw*R:0);
+    out.accounts[a.id]={startBal:st.bal[a.id],evapShare:evapShare[a.id],inflowShare,avail:st.bal[a.id]+inflowShare-evapShare[a.id]};
+  }
+  out.shortage=Math.max(0,9.0-inflow);
+  out.deviation=sumRaw>0?Math.abs(sumRaw-inflow)/inflow:0;
+  return out;
+}
+
+// decisions: {acctId:{withdraw:number, trades:[{with:id, maf:+buy/-sell, price_per_af:number}], rationale?:string}}
+function settle(st,setup,decisions){
+  const errors=[];
+  const net={}, comp={};
+  for(const a of ACCOUNTS){net[a.id]=0;comp[a.id]=0;}
+  for(const a of ACCOUNTS){
+    const d=decisions[a.id]||{withdraw:0,trades:[]};
+    if(typeof d.withdraw!=='number'||!isFinite(d.withdraw)||d.withdraw<0){errors.push(a.name+': withdrawal must be a non-negative number.');continue;}
+    for(const t of (d.trades||[])){
+      if(!ACCOUNTS.find(x=>x.id===t.with)||t.with===a.id){errors.push(a.name+': trade has unknown or self counterparty "'+t.with+'".');continue;}
+      if(typeof t.maf!=='number'||!isFinite(t.maf)||Math.abs(t.maf)>5){errors.push(a.name+': trade volume must be within ±5 maf.');continue;}
+      if(typeof t.price_per_af!=='number'||!isFinite(t.price_per_af)||t.price_per_af<0||t.price_per_af>10000){errors.push(a.name+': price must be between 0 and 10,000 $/af.');continue;}
+      net[a.id]+=t.maf;
+      comp[a.id]+=-t.maf*t.price_per_af; // buyer (maf>0) pays
+    }
+  }
+  // protection floor: the Reclamation account holds the protection volume and cannot withdraw or trade it in this adaptation
+  const rd=decisions.rec||{withdraw:0,trades:[]};
+  if((rd.withdraw||0)!==0){errors.push('Reclamation: the protection volume cannot be withdrawn (joint choice fixed at session start).');}
+  if((rd.trades||[]).length){errors.push('Reclamation: the protection volume does not trade.');}
+  // bilateral agreement: every pair's water volumes must cancel and cash must balance (same price both sides)
+  const pairs={};
+  for(const a of ACCOUNTS){for(const t of ((decisions[a.id]||{}).trades||[])){
+    if(!ACCOUNTS.find(x=>x.id===t.with)||t.with===a.id)continue;
+    if(typeof t.maf!=='number'||!isFinite(t.maf)||typeof t.price_per_af!=='number'||!isFinite(t.price_per_af))continue;
+    const key=[a.id,t.with].sort().join(' / ');
+    pairs[key]=pairs[key]||{vol:0,cash:0};
+    pairs[key].vol+=t.maf;
+    pairs[key].cash+=-t.maf*t.price_per_af;
+  }}
+  for(const k in pairs){
+    if(Math.abs(pairs[k].vol)>1e-9){errors.push('Trade pair '+k+': volumes do not cancel (net '+pairs[k].vol.toFixed(3)+' maf) - the seller must enter the same volume the buyer enters.');}
+    else if(Math.abs(pairs[k].cash)>1){errors.push('Trade pair '+k+': the two sides entered different prices, so compensation does not balance ($'+Math.round(pairs[k].cash).toLocaleString('en-US')+' apart).');}
+  }
+  const netSum=Object.values(net).reduce((a,b)=>a+b,0);
+  if(Math.abs(netSum)>1e-6){errors.push('Trades do not net to zero across accounts (net '+netSum.toFixed(3)+' maf). Every buy needs a matching sell.');}
+  const end={};
+  for(const a of ACCOUNTS){
+    const d=decisions[a.id]||{withdraw:0,trades:[]};
+    const av=setup.accounts[a.id].avail+net[a.id];
+    if(typeof d.withdraw==='number'&&isFinite(d.withdraw)&&d.withdraw>av+1e-9){errors.push(a.name+': withdrawal '+d.withdraw.toFixed(3)+' exceeds available water '+av.toFixed(3)+' maf.');}
+    end[a.id]=av-(d.withdraw||0);
+    if(end[a.id]<-1e-9){errors.push(a.name+': account would go negative.');}
+  }
+  if(errors.length)return {errors};
+  const rec=end.rec, eoyStorage=Object.values(end).reduce((a,b)=>a+b,0);
+  const massCheck=setup.storage+setup.inflow-setup.evap-Object.values(decisions).reduce((s,d)=>s+(d.withdraw||0),0);
+  return {end, net, comp, eoyStorage, eoyElev:storageToElev(eoyStorage), massErr:Math.abs(eoyStorage-massCheck)};
+}
+const CAP_MAX=CAPMAF[CAPMAF.length-1]; // 27.62 maf at 1,229 ft - top of the official table
+function overCapacity(st){return st>CAP_MAX+1e-9;}
+// ===PURE-END===
+
+// ---------- UI ----------
+const $=id=>document.getElementById(id);
+function elevTxt(storage){return overCapacity(storage)?'>1,229 (above table)':fmt(storageToElev(storage),1);}
+function capWarn(storage){return overCapacity(storage)?'<div class="warnbox">Storage is above the maximum documented capacity of Lake Mead (27.6 maf at 1,229 ft). This adaptation has no flood-control release rule, so elevation is capped at the official table maximum - treat this trajectory as outside the documented range.</div>':'';}
+const fmt=(x,d=3)=>x.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+const fmtMoney=x=>{const a=Math.abs(x);const s=a>=1e9?'$'+(a/1e9).toFixed(2)+'B':'$'+Math.round(a/1e6).toLocaleString()+'M';return (x<0?'−':'')+s;};
+let session=null, setup=null;
+
+function chip(a){return '<span class="acct-chip"><span class="dot" style="background:'+a.color+'"></span>'+a.name+'</span>';}
+
+$('startBtn').onclick=()=>{
+  const sel=$('startSel').value;
+  const startStorage=sel==='current'?interp(1038.85,ELEV,CAPMAF):interp(1055,ELEV,CAPMAF);
+  const protElev=parseFloat($('protSel').value);
+  session=newSession(startStorage,protElev);
+  $('play').classList.remove('hidden');$('history').classList.remove('hidden');
+  $('yearResult').innerHTML='';$('yearSetup').innerHTML='';$('decide').classList.add('hidden');
+  $('yrNum').textContent='1';
+  let h='<div class="okbox">Session started at <b>'+fmt(startStorage,2)+' maf</b> ('+fmt(storageToElev(startStorage),1)+' ft). Protection volume '+fmt(session.protVol,3)+' maf; active storage split pro-rata among the five user accounts:</div>';
+  h+='<div style="overflow-x:auto"><table><tr><th>Account</th><th>Start balance (maf)</th><th>Strategy reference (Guide Table 1a)</th></tr>';
+  for(const a of ACCOUNTS){h+='<tr><td>'+chip(a)+'</td><td>'+fmt(session.bal[a.id])+'</td><td class="strategy" style="text-align:left">'+a.strategy+'</td></tr>';}
+  h+='</table></div>';
+  $('setupOut').innerHTML=h;
+  renderKpis();renderHist();
+};
+
+document.querySelectorAll('#scenBtns button').forEach(b=>b.onclick=()=>{$('inflowIn').value=b.dataset.inflow;});
+
+$('setupYearBtn').onclick=()=>{
+  if(!session)return;
+  const inflow=parseFloat($('inflowIn').value);
+  if(!isFinite(inflow)||inflow<0||inflow>20){$('yearSetup').innerHTML='<div class="badbox">Enter a plausible inflow (0–20 maf).</div>';return;}
+  setup=yearSetup(session,inflow);
+  let h='<div class="kpi"><div class="k"><div class="v">'+fmt(setup.storage,2)+'</div><div class="l">Mead storage (maf)</div></div>'
+      +'<div class="k"><div class="v">'+elevTxt(setup.storage)+(overCapacity(setup.storage)?'':' ft')+'</div><div class="l">Elevation (USBR tables)</div></div>'
+      +'<div class="k"><div class="v">'+fmt(setup.evap,3)+'</div><div class="l">Evaporation this year (maf)</div></div>'
+      +'<div class="k"><div class="v">'+fmt(setup.shortage,1)+'</div><div class="l">Shortage vs 9.0 full basis (maf)</div></div></div>';
+  h+=capWarn(setup.storage);
+  h+='<div style="overflow-x:auto"><table><tr><th>Account</th><th>Start balance</th><th>Evaporation share</th><th>Inflow share</th><th>Available before decisions</th></tr>';
+  for(const a of ACCOUNTS){const s=setup.accounts[a.id];h+='<tr><td>'+chip(a)+'</td><td>'+fmt(s.startBal)+'</td><td>−'+fmt(s.evapShare)+'</td><td>+'+fmt(s.inflowShare)+'</td><td><b>'+fmt(s.avail)+'</b></td></tr>';}
+  h+='</table></div>';
+  h+='<p class="note">Reclamation\'s inflow share ('+fmt(setup.accounts.rec.inflowShare)+' maf) offsets its evaporation share, holding the protection volume at '+fmt(session.protVol,3)+' maf while inflow covers that offset (Guide Step 4); in years when inflow falls below it, the protection volume erodes - it is not a guaranteed floor. User shares normalized to the divisible inflow so water balances exactly (pre-normalization deviation '+(setup.deviation*100).toFixed(2)+'% from the Guide\'s rounded coefficients).</p>';
+  $('yearSetup').innerHTML=h;
+  $('decide').classList.remove('hidden');$('yearResult').innerHTML='';
+  buildDecTable();
+};
+
+function buildDecTable(){
+  let h='<tr><th>Account</th><th>Trades (one year)</th><th>Withdraw (maf)</th></tr>';
+  for(const a of ACCOUNTS){
+    if(a.id==='rec'){h+='<tr><td>'+chip(a)+'</td><td class="strategy">Maintains protection volume (no trades/withdrawals in this adaptation)</td><td>—</td></tr>';continue;}
+    h+='<tr><td>'+chip(a)+'<div class="strategy">'+a.strategy+'</div></td>'
+      +'<td><div id="trades_'+a.id+'"></div><button class="ghost small" onclick="addTradeRow(\''+a.id+'\')">+ trade</button></td>'
+      +'<td><input type="number" id="wd_'+a.id+'" min="0" step="0.05" value="0" style="width:90px"></td></tr>';
+  }
+  $('decTable').innerHTML=h;
+}
+function addTradeRow(id){
+  const div=$('trades_'+id);
+  const r=document.createElement('div');r.className='row';r.style.margin='4px 0';
+  let opts='';for(const a of ACCOUNTS){if(a.id!==id&&a.id!=='rec')opts+='<option value="'+a.id+'">'+a.name+'</option>';}
+  r.innerHTML='<input type="number" placeholder="+maf buy / −maf sell" step="0.05" style="width:150px" class="t_maf">'
+    +'<select class="t_with">'+opts+'</select>'
+    +'<input type="number" placeholder="$/af" min="0" max="10000" step="10" style="width:90px" class="t_price">'
+    +'<button class="ghost small" onclick="this.parentNode.remove()">×</button>';
+  div.appendChild(r);
+}
+
+function readManual(){
+  const dec={};
+  for(const a of ACCOUNTS){
+    if(a.id==='rec'){dec.rec={withdraw:0,trades:[]};continue;}
+    const wd=parseFloat($('wd_'+a.id).value)||0;
+    const trades=[];
+    $('trades_'+a.id).querySelectorAll('.row').forEach(r=>{
+      const maf=parseFloat(r.querySelector('.t_maf').value);
+      if(isFinite(maf)&&maf!==0){trades.push({with:r.querySelector('.t_with').value,maf:maf,price_per_af:parseFloat(r.querySelector('.t_price').value)});}
+    });
+    dec[a.id]={withdraw:wd,trades};
+  }
+  return dec;
+}
+
+function showResult(res,decisions,mode){
+  let h='<h3 style="margin-top:18px">Year '+session.year+' settled ('+mode+')</h3>';
+  const hasTrades=Object.values(res.net).some(v=>Math.abs(v)>1e-9);
+  if(hasTrades){
+    h+='<div style="overflow-x:auto"><table><tr><th>Trade</th><th>Volume (maf)</th><th>Price ($/af)</th><th>Compensation</th></tr>';
+    for(const a of ACCOUNTS){const d=decisions[a.id];if(!d||!d.trades)continue;for(const t of d.trades){if(t.maf>0){h+='<tr><td style="text-align:left">'+a.name+' buys from '+ACCOUNTS.find(x=>x.id===t.with).name+'</td><td>'+fmt(t.maf)+'</td><td>'+t.price_per_af+'</td><td>'+fmtMoney(t.maf*t.price_per_af*1e6)+'</td></tr>';}}}
+    h+='</table></div><p class="note">Net trade volume across accounts: '+fmt(Object.values(res.net).reduce((a,b)=>a+b,0),3)+' maf <span class="pill ok">nets to zero</span>. Trades are temporary — one year only (Guide Step 5).</p>';
+  }
+  h+='<div style="overflow-x:auto"><table><tr><th>Account</th><th>Available</th><th>Net trade</th><th>Withdraw</th><th>End balance</th></tr>';
+  for(const a of ACCOUNTS){const s=setup.accounts[a.id];const d=decisions[a.id]||{withdraw:0};h+='<tr><td>'+chip(a)+'</td><td>'+fmt(s.avail)+'</td><td>'+(res.net[a.id]>=0?'+':'')+fmt(res.net[a.id])+'</td><td>'+fmt(d.withdraw||0)+'</td><td><b>'+fmt(res.end[a.id])+'</b></td></tr>';}
+  h+='</table></div>';
+  h+='<div class="okbox">End of year: Lake Mead holds <b>'+fmt(res.eoyStorage,2)+' maf</b> ('+elevTxt(res.eoyStorage)+(overCapacity(res.eoyStorage)?'':' ft')+'). Mass balance exact: start + inflow − evaporation − withdrawals = end (error '+res.massErr.toExponential(1)+' maf).</div>';
+  $('yearResult').innerHTML=capWarn(res.eoyStorage)+h;
+  // rationale: append as text nodes only (AI text is never rendered as HTML)
+  const rats=ACCOUNTS.filter(a=>decisions[a.id]&&decisions[a.id].rationale);
+  if(rats.length){
+    const h3=document.createElement('h3');h3.textContent='Decision rationale ('+mode+')';
+    const ul=document.createElement('ul');ul.className='tight';
+    for(const a of rats){const li=document.createElement('li');const b=document.createElement('b');b.textContent=a.name+': ';li.appendChild(b);li.appendChild(document.createTextNode(decisions[a.id].rationale));ul.appendChild(li);}
+    $('yearResult').appendChild(h3);$('yearResult').appendChild(ul);
+  }
+}
+
+function applyAndRender(res,decisions,mode,msgDiv){
+  session.year+=1;
+  for(const a of ACCOUNTS)session.bal[a.id]=res.end[a.id];
+  session.hist.push({year:session.year,inflow:setup.inflow,storage:res.eoyStorage,elev:res.eoyElev,withdraw:Object.fromEntries(ACCOUNTS.map(a=>[a.id,(decisions[a.id]||{}).withdraw||0])),end:Object.assign({},res.end)});
+  showResult(res,decisions,mode);
+  renderKpis();renderHist();
+  $('yrNum').textContent=session.year+1;
+  $('decide').classList.add('hidden');$('yearSetup').innerHTML='<p class="note">Year '+session.year+' complete. Choose the next year\'s inflow and press "Compute year setup".</p>';
+  if(msgDiv)msgDiv.innerHTML='';
+}
+
+$('settleBtn').onclick=()=>{
+  const dec=readManual();
+  const res=settle(session,setup,dec);
+  if(res.errors){$('manMsg').innerHTML='<div class="badbox"><b>Not settled:</b><ul class="tight"><li>'+res.errors.join('</li><li>')+'</li></ul></div>';return;}
+  $('manMsg').innerHTML='';
+  applyAndRender(res,dec,'manual play');
+};
+
+// tabs
+$('tabManual').onclick=()=>{$('tabManual').classList.add('sel');$('tabAI').classList.remove('sel');$('panelManual').classList.remove('hidden');$('panelAI').classList.add('hidden');};
+$('tabAI').onclick=()=>{$('tabAI').classList.add('sel');$('tabManual').classList.remove('sel');$('panelAI').classList.remove('hidden');$('panelManual').classList.add('hidden');};
+
+$('genPromptBtn').onclick=()=>{
+  if(!setup)return;
+  const lines=[];
+  lines.push('You are role-playing ALL FIVE user accounts (California, Arizona, Nevada, Mexico, Tribal Nations of the Lower Basin) in one year of the Lake Mead Water Bank model (Rosenberg & Myers, "Divide Reservoir Inflow"). The Reclamation protection volume is held fixed by the page and is not one of your roles. Write each account\'s one-year decisions from its own perspective and strategy. This is LLM role-play of every role in a single conversation.');
+  lines.push('');
+  lines.push('YEAR '+(session.year+1)+' STATE (all volumes in maf):');
+  lines.push('Lake Mead storage '+fmt(setup.storage,2)+' maf ('+fmt(setup.elev,1)+' ft); protection elevation '+session.protElev+' ft; inflow this year '+setup.inflow+' maf; lake evaporation '+fmt(setup.evap,3)+' maf.');
+  for(const a of ACCOUNTS){const s=setup.accounts[a.id];lines.push('- '+a.name+': balance '+fmt(s.startBal)+', evaporation share -'+fmt(s.evapShare)+', inflow share +'+fmt(s.inflowShare)+', available before decisions '+fmt(s.avail)+'. Strategy: '+a.strategy);}
+  lines.push('');
+  lines.push('RULES: (1) Each account except Reclamation chooses trades and a withdrawal. (2) Trades are one-year: buy = +maf, sell = -maf, each with an agreed price in $/acre-foot; total compensation = maf x price; reference price points: about $400/af (500-Plus Plan) to $500/af (guide example). (3) Trade volumes across ALL accounts must net to exactly zero — every buy needs a matching sell at the same price. (4) Each account\'s withdrawal must not exceed its available water plus its net trades. (5) Accounts may leave water unwithdrawn to bank it for future years.');
+  lines.push('');
+  lines.push('RESPOND WITH JSON ONLY, no other text, exactly this shape:');
+  lines.push('{"decisions": {"ca": {"withdraw": 0.0, "trades": [{"with": "tr", "maf": 0.2, "price_per_af": 500}], "rationale": "one or two sentences"}, "az": {...}, "nv": {...}, "mx": {...}, "tr": {...}}}');
+  lines.push('Include every key: ca, az, nv, mx, tr. Use "trades": [] if an account does not trade.');
+  $('promptOut').textContent=lines.join('\n');
+  $('promptOut').classList.remove('hidden');
+  $('copyPromptBtn').disabled=false;
+};
+$('copyPromptBtn').onclick=()=>{
+  const txt=$('promptOut').textContent;
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(()=>{$('copyPromptBtn').textContent='Copied';});}
+  else{const r=document.createRange();r.selectNodeContents($('promptOut'));const s=getSelection();s.removeAllRanges();r&&s.addRange(r);document.execCommand('copy');$('copyPromptBtn').textContent='Copied';}
+};
+
+$('applyAiBtn').onclick=()=>{
+  if($('aiIn').value.length>50000){$('aiMsg').innerHTML='<div class="badbox">Response too large (over 50,000 characters) - paste only the JSON decision object.</div>';return;}
+  let obj;
+  try{obj=JSON.parse($('aiIn').value);}catch(e){$('aiMsg').innerHTML='<div class="badbox">Not valid JSON: '+String(e.message||e)+'</div>';return;}
+  if(!obj||typeof obj!=='object'||!obj.decisions){$('aiMsg').innerHTML='<div class="badbox">Missing top-level "decisions" object.</div>';return;}
+  const dec={rec:{withdraw:0,trades:[]}};
+  for(const id of USERS){
+    const d=obj.decisions[id];
+    if(!d||typeof d!=='object'){$('aiMsg').innerHTML='<div class="badbox">Missing decisions for "'+id+'".</div>';return;}
+    if(typeof d.rationale!=='string'||!d.rationale.trim()){$('aiMsg').innerHTML='<div class="badbox">Missing a written rationale for "'+id+'" - every role needs one.</div>';return;}
+    dec[id]={withdraw:Number(d.withdraw),trades:Array.isArray(d.trades)?d.trades.map(t=>({with:String(t.with),maf:Number(t.maf),price_per_af:Number(t.price_per_af)})):[],rationale:d.rationale.slice(0,600)};
+  }
+  const res=settle(session,setup,dec);
+  if(res.errors){$('aiMsg').innerHTML='<div class="badbox"><b>Rejected — fix and repaste:</b><ul class="tight"><li>'+res.errors.join('</li><li>')+'</li></ul></div>';return;}
+  $('aiMsg').innerHTML='';
+  applyAndRender(res,dec,'AI role-play via copy/paste bridge');
+};
+
+function renderKpis(){
+  if(!session)return;
+  const storage=Object.values(session.bal).reduce((a,b)=>a+b,0);
+  $('kpis').innerHTML='<div class="k"><div class="v">'+fmt(storage,2)+' maf</div><div class="l">Mead storage now</div></div>'
+    +'<div class="k"><div class="v">'+elevTxt(storage)+(overCapacity(storage)?'':' ft')+'</div><div class="l">Elevation now</div></div>'
+    +'<div class="k"><div class="v">'+session.protElev+' ft</div><div class="l">Protection elevation</div></div>'
+    +'<div class="k"><div class="v">'+session.year+'</div><div class="l">Years played</div></div>';
+}
+
+function renderHist(){
+  if(!session)return;
+  // chart
+  const W=680,H=220,P=34;
+  const pts=session.hist.map(h=>({y:h.year,e:h.elev}));
+  const allE=pts.map(p=>p.e).concat([session.protElev,storageToElev(Object.values(session.bal).reduce((a,b)=>a+b,0))]);
+  let eMin=Math.min.apply(null,allE)-3,eMax=Math.max.apply(null,allE)+3;
+  const n=Math.max(pts.length,5);
+  const X=i=>P+i*(W-2*P)/(n-1), Y=e=>H-P-(e-eMin)*(H-2*P)/(eMax-eMin);
+  let svg='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;max-width:680px;background:#f8fafc;border:1px solid var(--line);border-radius:10px">';
+  svg+='<line x1="'+P+'" y1="'+Y(session.protElev)+'" x2="'+(W-P)+'" y2="'+Y(session.protElev)+'" stroke="#b91c1c" stroke-dasharray="5 4" stroke-width="1.5"/>';
+  svg+='<text x="'+(W-P+2)+'" y="'+(Y(session.protElev)-4)+'" font-size="10" fill="#b91c1c" text-anchor="end">protection '+session.protElev+' ft</text>';
+  if(pts.length){
+    let path='M'+pts.map((p,i)=>X(i).toFixed(1)+','+Y(p.e).toFixed(1)).join(' L');
+    svg+='<path d="'+path+'" fill="none" stroke="#0369a1" stroke-width="2.5"/>';
+    pts.forEach((p,i)=>{svg+='<circle cx="'+X(i)+'" cy="'+Y(p.e)+'" r="3.5" fill="#0369a1"/><text x="'+X(i)+'" y="'+(Y(p.e)-7)+'" font-size="9.5" text-anchor="middle" fill="#0f172a">'+p.e.toFixed(0)+'</text><text x="'+X(i)+'" y="'+(H-P+13)+'" font-size="9.5" text-anchor="middle" fill="#64748b">Y'+p.y+'</text>';});
+  }
+  svg+='</svg>';
+  $('chartWrap').innerHTML='<h3>Lake Mead elevation by year (USBR area-capacity tables)</h3>'+svg;
+  // table
+  let h='<tr><th>Year</th><th>Inflow</th>'+ACCOUNTS.map(a=>'<th>'+a.name+' withdraw</th>').join('')+'<th>Mead end (maf / ft)</th></tr>';
+  for(const r of session.hist){h+='<tr><td>'+r.year+'</td><td>'+fmt(r.inflow,1)+'</td>'+ACCOUNTS.map(a=>'<td>'+fmt(r.withdraw[a.id],2)+'</td>').join('')+'<td>'+fmt(r.storage,2)+' / '+(overCapacity(r.storage)?'>1,229':fmt(r.elev,1))+'</td></tr>';}
+  $('histTable').innerHTML=h;
+}
+
+$('undoBtn').onclick=()=>{
+  if(!session||!session.hist.length)return;
+  session.hist.pop();
+  // rebuild balances from the previous year's end state (or fresh session if none)
+  if(session.hist.length){const prev=session.hist[session.hist.length-1];for(const a of ACCOUNTS)session.bal[a.id]=prev.end[a.id];}
+  else{const sel=$('startSel').value;const startStorage=sel==='current'?interp(1038.85,ELEV,CAPMAF):interp(1055,ELEV,CAPMAF);const fresh=newSession(startStorage,session.protElev);session.bal=fresh.bal;}
+  session.year-=1;$('yrNum').textContent=session.year+1;
+  renderKpis();renderHist();$('yearResult').innerHTML='';$('yearSetup').innerHTML='';$('decide').classList.add('hidden');
+};
+$('resetBtn').onclick=()=>{session=null;setup=null;$('play').classList.add('hidden');$('history').classList.add('hidden');$('setupOut').innerHTML='';};
+</script>
+</body>
+</html>
