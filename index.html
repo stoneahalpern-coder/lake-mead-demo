@@ -134,7 +134,7 @@
 
   <div id="decide" class="hidden">
     <h3>Decisions — who is playing?</h3>
-    <p class="note"><b>Session rules (the game's constitution):</b> trades are one-year and must net to zero across accounts; each trade has one agreed price; withdrawals cannot exceed available water; balances carry over year to year; every player states a one-line reason each year (logged for review); hard lines are flagged, never blocked; play in good faith from your mandate (Appendix A Rules 4-6, author's April 2026 protocol).</p>
+    <p class="note"><b>Session rules (the game's constitution):</b> trades are one-year and must net to zero across accounts; each trade has one agreed price; withdrawals cannot exceed available water; balances carry over year to year; every player states a one-line reason each year (logged for review); hard lines are flagged, never blocked; play in good faith from your role brief. Every role brief, hard line, would-trade position, and conduct rule on this page is the author's invented design assumption for this game - not the actual or documented position of the real states, Mexico, or Tribal Nations, and not sourced research; quantities are the Model Guide's.</p>
     <div class="tabs">
       <button class="ghost small sel" id="tabManual">Manual play</button>
       <button class="ghost small" id="tabDash">Participant dashboard</button>
@@ -150,13 +150,14 @@
 
     <div id="panelDash" class="hidden">
       <p class="note"><b>David Rosenberg's participant dashboard layout</b> (Guide Step 5 — the spreadsheet layout from his session walkthrough). Each stakeholder fills only the salmon cells: net volume to buy(+) or sell(−), price per acre-foot, and withdrawal. Starting available water, compensation, the net-trade tracker, available water, and end-of-year balance are computed live. Two deliberate differences from the sheet, same accounting engine as the rest of this page: price is entered as a positive $/af and compensation is signed automatically (buyers pay −, sellers receive +); and the two sides of each matched trade must enter the same price, as in Manual play. Reclamation's protection volume stays fixed in this adaptation.</p>
+      <p class="note"><b>Player briefs in the panels below (hard lines and would-trade positions) are the author's invented design assumptions for this game</b> - not the actual or documented positions of the real states, Mexico, or Tribal Nations, and not sourced research. Quantities are the Model Guide's.</p>
       <div id="dashGrid" class="grid2"></div>
       <div id="dashMsg"></div>
       <button id="dashSettleBtn" style="margin-top:10px">Validate &amp; settle year</button>
     </div>
 
     <div id="panelAI" class="hidden">
-      <p class="note"><b>How this works:</b> copy the generated prompt into your own AI chat (for example claude.ai on this Mac — whatever account you have). One AI conversation writes all five user roles' decisions per prompt (LLM role-play of every role in a single conversation, not independent agents — use separate chats if you want genuinely separate players). The prompt gives each role a mandate, a HARD LINE, and a would-trade position from Stone's Appendix A (author's April 2026 protocol), plus conduct rules (Rules 4–6). One AI conversation writes the five user roles' decisions as JSON (the Reclamation protection volume is held fixed); paste the JSON back here. This page validates it (bilateral matching trades, withdrawals within available water, price bounds) and runs the accounting. The AI chat step needs internet; everything else runs offline. Decisions are LLM role-play from a single conversation — not independent agents. The AI's text is never rendered as HTML.</p>
+      <p class="note"><b>How this works:</b> copy the generated prompt into your own AI chat (for example claude.ai on this Mac — whatever account you have). One AI conversation writes all five user roles' decisions per prompt (LLM role-play of every role in a single conversation, not independent agents — use separate chats if you want genuinely separate players). The prompt gives each role a scenario position, a HARD LINE, and a would-trade position, plus conduct rules (Rules 4-6) - all invented by the author as design assumptions for this game, not the real parties' documented positions and not sourced research; quantities in the prompt are the Model Guide's. One AI conversation writes the five user roles' decisions as JSON (the Reclamation protection volume is held fixed); paste the JSON back here. This page validates it (bilateral matching trades, withdrawals within available water, price bounds) and runs the accounting. The AI chat step needs internet; everything else runs offline. Decisions are LLM role-play from a single conversation — not independent agents. The AI's text is never rendered as HTML.</p>
       <div class="row" style="margin-bottom:8px"><button class="ghost" id="genPromptBtn">Generate prompt for this year</button><button class="ghost" id="copyPromptBtn" disabled>Copy prompt</button></div>
       <div class="promptbox hidden" id="promptOut"></div>
       <label for="aiIn" style="margin-top:10px">Paste the AI's JSON response</label>
@@ -175,7 +176,7 @@
   <div style="overflow-x:auto"><table id="histTable"></table></div>
   <div id="reasonWrap"></div>
   <div class="row" style="margin-top:12px"><button class="ghost small" id="undoBtn">Undo last year</button><button class="ghost small" id="resetBtn">Reset session</button><button class="ghost small" id="logBtn">Copy session log (JSON)</button></div>
-  <p class="note" id="logNote">The session log is the Appendix A Rule 4(f) negotiation log: per year, every account's withdrawal, trades, settled prices, stated reasons, and hard-line flags - ready to paste into the project brief or AI collaboration log.</p>
+  <p class="note" id="logNote">The session log follows the author's own Rule 4(f) negotiation-log design: per year, every account's withdrawal, trades, settled prices, stated reasons, and hard-line flags - ready to paste into the project brief or AI collaboration log.</p>
 </section>
 
 <section id="methods">
@@ -195,9 +196,9 @@
     <li>Protection elevation is fixed at session start (1,020 or 1,000 ft). Mid-session changes are possible in the full model.</li>
     <li>Only two price points are documented in the Guide: about $400/af (500-Plus Plan, $200M for 0.5 maf/yr) and the $500/af worked trade example. Any price entered in play (like the $650/af in a test session) is the player's or AI's own choice within the 0–10,000 $/af bound — an illustration of the mechanism, not a documented or predicted price.</li>
     <li>The Participant dashboard tab mirrors the per-account spreadsheet layout from David Rosenberg's session walkthrough (salmon input cells; starting available water, compensation, net-trade tracker, available water, and end-of-year balance computed live). Differences from his sheet, by design: price is entered unsigned with compensation signed by direction (his example slide signs the price cell and its California row contradicts its own annotated formula Compensation = Price × Volume); matched trades must agree on one price (his sheet checks only that volumes net to zero); each account enters one net volume rather than per-trade columns; and Reclamation's protection volume stays fixed rather than being played.</li>
-    <li>Role briefs, hard lines, and would-trade positions (shown in the player panels and the Live AI bridge prompt) combine Stone Halpern's Appendix A (the author's April 2026 scenario protocol) with the Model Guide: California senior-ag vs junior-MWD priority, Arizona junior CAP priority with first-tier exposure, Nevada scarcity and conservation leadership, Mexico's 1944 Treaty delivery, tribal Winters (1908) reserved rights. Qualitative positions and the Rules 4-6 conduct come from Appendix A; every quantity on this page comes from the Model Guide (4.4 / 2.8 / 0.3 / 1.5 / 0.95 MAF allocations, Table 1a/4a shortage shares, 0.47 of 0.95 MAF tribal settled rights currently used - Ten Tribes Partnership 2018). Appendix A figures that conflicted with the Guide (its shortage-tier volumes, Mexico treaty threshold, and quantified tribal-rights total) were removed at the author's direction and are not used anywhere on this page.</li>
-    <li>Hard-line checks flag but never block: when a settled move crosses a player's stated hard line, the year result and the history table mark it. The Positions and stated reasons table doubles as the Appendix A Rule 4(f) negotiation log (positions, concessions, stated reasons, hard-line crossings, per year) and exports as JSON via "Copy session log".</li>
-    <li>What a session can and cannot show: it shows where each played position moved year to year (withdrawals, trades, prices), what the players said drove each move, and where hard lines held or broke - raw material for discussing a zone of possible agreement. It does not show what real states, Mexico, or Tribal Nations would do: roles are played by people or by one AI conversation from simplified mandates, and AI rationales are self-reported, not observed motives.</li>
+    <li>Role briefs, hard lines, and would-trade positions (shown in the player panels and the Live AI bridge prompt) are Stone Halpern's invented design assumptions for this game (his April 2026 scenario design): California senior-ag vs junior-MWD priority, Arizona junior-CAP first-tier exposure, Nevada scarcity and conservation leadership, Mexico treaty-delivery framing, tribal reserved-rights framing. They are not the actual or documented positions of the real states, Mexico, or Tribal Nations, and they are not sourced research. The Rules 4-6 conduct is likewise the author's own game design. Every quantity on this page comes from the Model Guide (4.4 / 2.8 / 0.3 / 1.5 / 0.95 MAF allocations, Table 1a/4a shortage shares, 0.47 of 0.95 MAF tribal settled rights currently used - Ten Tribes Partnership 2018). Earlier scenario figures that conflicted with the Guide (its shortage-tier volumes, Mexico treaty threshold, and quantified tribal-rights total) were removed at the author's direction and are not used anywhere on this page.</li>
+    <li>Hard-line checks flag but never block: when a settled move crosses a player's stated hard line, the year result and the history table mark it. The Positions and stated reasons table doubles as the negotiation log from the author's Rule 4(f) game design (positions, concessions, stated reasons, hard-line crossings, per year) and exports as JSON via "Copy session log".</li>
+    <li>What a session can and cannot show: it shows where each played position moved year to year (withdrawals, trades, prices), what the players said drove each move, and where hard lines held or broke - raw material for discussing a zone of possible agreement. It does not show what real states, Mexico, or Tribal Nations would do: roles are played by people or by one AI conversation from the author's simplified invented positions, and AI rationales are self-reported, not observed motives.</li>
   </ul>
   <h3>AI disclosure</h3>
   <ul class="tight">
@@ -244,23 +245,23 @@ function evapAf(storageMaf){return 6.0*storageToArea(storageMaf)/1e6;} // 6 ft/y
 const ACCOUNTS=[
   {id:'rec',name:'Reclamation',color:'#64748b',alloc:0,strategy:'Hold the protection elevation (2019 DCP default 1,020 ft). The published model allows lowering it mid-session as a joint policy choice; this adaptation fixes it at session start.'},
   {id:'ca',name:'California',color:'#2563eb',alloc:4.4,shortShare:0.367,tribalLoc:0.164,strategy:'Cut back from 4.4 maf/yr per shortage sharing; buy water to reduce mandatory conservation; save some for future years (Guide Table 1a).',
-   mandate:'Mandate: 4.4 MAF compact allocation (Boulder Canyon Project Act 1928); internal priority structure - senior agricultural districts (Imperial, Coachella, Palo Verde) ahead of junior municipal (Metropolitan Water District); historical reliance on surplus flows.',
+   mandate:'AUTHOR\'S SCENARIO POSITION (invented for this game, not the real California\'s documented stance): senior agricultural districts (Imperial, Coachella, Palo Verde) ahead of junior municipal (Metropolitan Water District); reliance on surplus flows. Guide figure: 4.4 MAF allocation (Table 1a).',
    hardline:'In a shortage year California does not sell water: its senior priority means shortage falls on others first, and cuts inside California fall on junior MWD before the senior ag districts.',
    wouldtrade:'Buys water and funds conservation, reuse, or desal deals to protect MWD municipal supply; pays premium prices in dry years.'},
   {id:'az',name:'Arizona',color:'#d97706',alloc:2.8,shortShare:0.43,tribalLoc:0.822,strategy:'Cut back from 2.8 maf/yr; buy water to reduce mandatory conservation; save some for future years.',
-   mandate:'Mandate: 2.8 MAF allocation (BCPA 1928) but the Central Arizona Project holds junior priority on the Lower Basin mainstream (Basin Project Act 1968) - first-tier shortage exposure; heavy Phoenix/Tucson municipal dependence.',
+   mandate:'AUTHOR\'S SCENARIO POSITION (invented for this game, not the real Arizona\'s documented stance): the Central Arizona Project as junior-priority and first in line for cuts; heavy Phoenix/Tucson municipal dependence. Guide figure: 2.8 MAF allocation (Table 1a).',
    hardline:'In a shortage year Arizona does not sell water: it is first in line for cuts and must protect municipal CAP deliveries; it resists any split that cuts Arizona deeper while senior California stays whole.',
    wouldtrade:'Buys aggressively in shortage years; banks in wet years; supports deals consistent with the DCP tier structure.'},
   {id:'nv',name:'Nevada',color:'#059669',alloc:0.3,shortShare:0.036,tribalLoc:0.013,strategy:'Cut back from 0.3 maf/yr; buy water; bank savings for future years.',
-   mandate:'Mandate: 0.3 MAF allocation; acute scarcity and national conservation leadership; Las Vegas-area dependency.',
+   mandate:'AUTHOR\'S SCENARIO POSITION (invented for this game, not the real Nevada\'s documented stance): acute scarcity, conservation leadership, Las Vegas-area dependency. Guide figure: 0.3 MAF allocation (Table 1a).',
    hardline:'Nevada never consumes 100% of its available water: it banks every year and presses the others toward conservation and demand management.',
    wouldtrade:'Leases banked savings at strong prices; buys small volumes cheaply in wet years.'},
   {id:'mx',name:'Mexico',color:'#dc2626',alloc:1.5,shortShare:0.167,tribalLoc:0,strategy:'Cut back from 1.5 maf/yr; conserve beyond mandatory targets; may lease water to fund non-water projects.',
-   mandate:'Mandate: 1944 Mexican Water Treaty guarantees 1.5 MAF annual delivery, with negotiated shortage sharing (Minute 323); represented through the IBWC.',
+   mandate:'AUTHOR\'S SCENARIO POSITION (invented for this game, not the real Mexico\'s documented stance): treaty delivery with negotiated shortage sharing, represented through the IBWC. Guide figure: 1.5 MAF treaty delivery (the Guide cites the 1944 U.S.-Mexico Treaty and its Minutes).',
    hardline:'In a shortage year Mexico does not sell water: its 1944 Treaty delivery is already cut, and it treats shortfalls as a treaty matter for the IBWC, not a market opportunity (Guide: 1.5 MAF treaty delivery with negotiated shortage sharing).',
    wouldtrade:'Leases water in adequate years to fund non-water projects; favors binational desal and conservation projects.'},
   {id:'tr',name:'Tribal Nations of the Lower Basin',color:'#7c3aed',alloc:0.95,strategy:'Manage 0.95 maf of settled rights independently; about 0.47 currently used; lease settled, undeveloped water to acquire capital; save for future use (Ten Tribes Partnership 2018, via Guide).',
-   mandate:'Mandate: Winters v. United States (1908) reserved rights with priority dates pre-dating state appropriations; quantified settlements plus unquantified claims; sovereign governments. An AI cannot capture tribal cultural values or community decision-making - play documented positions only (Appendix A section (g)(iv)).',
+   mandate:'AUTHOR\'S SCENARIO POSITION (invented for this game, not any real Tribal Nation\'s documented stance): reserved-rights framing with settled and unquantified claims; sovereign governments. An AI cannot capture tribal cultural values or community decision-making (the author\'s design note): play the documented Guide position only. Guide figures: 0.95 MAF settled rights, about 0.47 currently used (Ten Tribes Partnership 2018, via Guide).',
    hardline:'Tribal Nations lease only settled, undeveloped water (Guide: about 0.47 of 0.95 MAF currently used): the developed core of reserved rights is never for sale at any price.',
    wouldtrade:'Leases undeveloped settled water to acquire capital for infrastructure; open to long-term leasing partnerships.'}
 ];
@@ -350,17 +351,17 @@ function settle(st,setup,decisions){
   const massCheck=setup.storage+setup.inflow-setup.evap-Object.values(decisions).reduce((s,d)=>s+(d.withdraw||0),0);
   return {end, net, comp, eoyStorage, eoyElev:storageToElev(eoyStorage), massErr:Math.abs(eoyStorage-massCheck)};
 }
-// hard-line check (Stone Halpern Appendix A, author's April 2026 protocol): flags moves that cross a player's stated hard line. Flags never block.
+// hard-line check: flags moves that cross the author's designed hard line for a role (his invented game positions, not sourced research or real parties' documented positions). Flags never block.
 function hardLineCheck(setup,decisions){
   const flags={};
   const S=setup.shortage;
   const net={};for(const a of ACCOUNTS){net[a.id]=((decisions[a.id]||{}).trades||[]).reduce((s,t)=>s+(t.maf||0),0);}
-  if(S>1e-9&&net.ca<-1e-9)flags.ca='California sells water in a shortage year - crosses its hard line (senior-priority position; cuts fall on junior MWD first) [Appendix A (b)(i)].';
-  if(S>1e-9&&net.az<-1e-9)flags.az='Arizona sells water in a shortage year - crosses its hard line (junior CAP priority, first-tier exposure, protects municipal deliveries) [Appendix A (b)(i)].';
+  if(S>1e-9&&net.ca<-1e-9)flags.ca='California sells water in a shortage year - crosses the author\'s designed hard line for this role (senior-priority scenario position; cuts fall on junior MWD first). Game-design assumption, not the real party\'s documented position.';
+  if(S>1e-9&&net.az<-1e-9)flags.az='Arizona sells water in a shortage year - crosses the author\'s designed hard line for this role (junior CAP scenario position, first-tier exposure, protects municipal deliveries). Game-design assumption, not the real party\'s documented position.';
   const nvAvail=setup.accounts.nv.avail+net.nv, nvW=(decisions.nv||{}).withdraw||0;
-  if(nvW>0&&nvAvail>0&&Math.abs(nvW-nvAvail)<5e-4)flags.nv='Nevada withdrew 100% of its available water - crosses its hard line (conservation leadership: banks every year, never fully consumes) [Appendix A (b)(i)].';
-  if(S>1e-9&&net.mx<-1e-9)flags.mx='Mexico sells water in a shortage year - crosses its hard line (1944 Treaty delivery already cut; shortfalls are a treaty matter for the IBWC, not a market opportunity) [Guide: 1.5 MAF treaty delivery, negotiated shortage sharing].';
-  if(net.tr<-0.48-1e-9)flags.tr='Tribal Nations lease beyond the undeveloped portion of their settled rights - crosses their hard line (developed core of reserved rights never for sale) [Guide: 0.95 MAF settled rights, about 0.47 currently used - Ten Tribes Partnership 2018].';
+  if(nvW>0&&nvAvail>0&&Math.abs(nvW-nvAvail)<5e-4)flags.nv='Nevada withdrew 100% of its available water - crosses the author\'s designed hard line for this role (conservation-leadership scenario position: banks every year, never fully consumes). Game-design assumption, not the real party\'s documented position.';
+  if(S>1e-9&&net.mx<-1e-9)flags.mx='Mexico sells water in a shortage year - crosses the author\'s designed hard line for this role (1944 Treaty delivery already cut; shortfalls are a treaty matter for the IBWC, not a market opportunity) [Guide: 1.5 MAF treaty delivery, negotiated shortage sharing]. Game-design assumption, not the real party\'s documented position.';
+  if(net.tr<-0.48-1e-9)flags.tr='Tribal Nations lease beyond the undeveloped portion of their settled rights - crosses the author\'s designed hard line for this role (developed core of reserved rights never for sale) [Guide: 0.95 MAF settled rights, about 0.47 currently used - Ten Tribes Partnership 2018]. Game-design assumption, not any real Tribal Nation\'s documented position.';
   return flags;
 }
 const CAP_MAX=CAPMAF[CAPMAF.length-1]; // 27.62 maf at 1,229 ft - top of the official table
@@ -425,7 +426,7 @@ function buildDecTable(){
   let h='<tr><th>Account</th><th>Trades (one year)</th><th>Withdraw (maf)</th><th>Reason (one line)</th></tr>';
   for(const a of ACCOUNTS){
     if(a.id==='rec'){h+='<tr><td>'+chip(a)+'</td><td class="strategy">Maintains protection volume (no trades/withdrawals in this adaptation)</td><td>—</td><td>—</td></tr>';continue;}
-    h+='<tr><td>'+chip(a)+'<div class="strategy">'+a.strategy+'</div>'+(a.hardline?'<div class="strategy"><b>Hard line:</b> '+a.hardline+'</div>':'')+'</td>'
+    h+='<tr><td>'+chip(a)+'<div class="strategy">'+a.strategy+'</div>'+(a.hardline?'<div class="strategy"><b>Hard line (author\'s design):</b> '+a.hardline+'</div>':'')+'</td>'
       +'<td><div id="trades_'+a.id+'"></div><button class="ghost small" onclick="addTradeRow(\''+a.id+'\')">+ trade</button></td>'
       +'<td><input type="number" id="wd_'+a.id+'" min="0" step="0.05" value="0" style="width:90px"></td>'
       +'<td><input type="text" id="rsn_'+a.id+'" maxlength="200" placeholder="why this move" style="width:170px"></td></tr>';
@@ -461,7 +462,7 @@ function readManual(){
 function showResult(res,decisions,mode,flags){
   let h='<h3 style="margin-top:18px">Year '+session.year+' settled ('+mode+')</h3>';
   const flagIds=flags?Object.keys(flags):[];
-  if(flagIds.length){h+='<div class="warnbox"><b>Hard-line flags (flagged, not blocked - Appendix A protocol):</b><ul class="tight"><li>'+flagIds.map(id=>ACCOUNTS.find(a=>a.id===id).name+': '+flags[id]).join('</li><li>')+'</li></ul></div>';}
+  if(flagIds.length){h+='<div class="warnbox"><b>Hard-line flags (flagged, not blocked - the author\'s game rules):</b><ul class="tight"><li>'+flagIds.map(id=>ACCOUNTS.find(a=>a.id===id).name+': '+flags[id]).join('</li><li>')+'</li></ul></div>';}
   const hasTrades=Object.values(res.net).some(v=>Math.abs(v)>1e-9);
   if(hasTrades){
     h+='<div style="overflow-x:auto"><table><tr><th>Trade</th><th>Volume (maf)</th><th>Price ($/af)</th><th>Compensation</th></tr>';
@@ -522,7 +523,7 @@ function buildDashboard(){
   let h='';
   for(const a of ACCOUNTS){
     const s=setup.accounts[a.id];
-    h+='<div class="dashpanel"><h3 style="margin-top:0">'+chip(a)+'</h3>'+(a.hardline?'<div class="strategy" style="margin:0 0 6px"><b>Hard line:</b> '+a.hardline+' <b>Would trade:</b> '+a.wouldtrade+'</div>':'')+'<table>';
+    h+='<div class="dashpanel"><h3 style="margin-top:0">'+chip(a)+'</h3>'+(a.hardline?'<div class="strategy" style="margin:0 0 6px"><b>Hard line (author\'s design):</b> '+a.hardline+' <b>Would trade (author\'s design):</b> '+a.wouldtrade+'</div>':'')+'<table>';
     h+='<tr><td>Starting Available Water [maf]</td><td class="calc" id="ds_'+a.id+'">'+fmt(s.avail)+'</td></tr>';
     if(a.id==='rec'){
       h+='<tr><td colspan="2" class="strategy" style="text-align:left">Held fixed in this adaptation — the protection volume does not trade and cannot be withdrawn.</td></tr>';
@@ -604,14 +605,15 @@ $('genPromptBtn').onclick=()=>{
   if(!setup)return;
   const lines=[];
   lines.push('You are role-playing ALL FIVE user accounts (California, Arizona, Nevada, Mexico, Tribal Nations of the Lower Basin) in one year of the Lake Mead Water Bank model (Rosenberg & Myers, "Divide Reservoir Inflow"). The Reclamation protection volume is held fixed by the page and is not one of your roles. Write each account\'s one-year decisions from its own perspective and strategy. This is LLM role-play of every role in a single conversation.');
+  lines.push('Every role brief below (scenario position, HARD LINE, WOULD TRADE) is the author\'s invented design assumption for this game - not the actual or documented position of the real state, Mexico, or Tribal Nation, and not sourced research. Quantities cited to the Model Guide are the Guide\'s.');
   lines.push('');
   lines.push('YEAR '+(session.year+1)+' STATE (all volumes in maf):');
   lines.push('Lake Mead storage '+fmt(setup.storage,2)+' maf ('+fmt(setup.elev,1)+' ft); protection elevation '+session.protElev+' ft; inflow this year '+setup.inflow+' maf; lake evaporation '+fmt(setup.evap,3)+' maf.');
   for(const a of ACCOUNTS){const s=setup.accounts[a.id];lines.push('- '+a.name+': balance '+fmt(s.startBal)+', evaporation share -'+fmt(s.evapShare)+', inflow share +'+fmt(s.inflowShare)+', available before decisions '+fmt(s.avail)+'.');
     if(a.id==='rec'){lines.push('  '+a.strategy);}
-    else{lines.push('  '+a.mandate);lines.push('  HARD LINE: '+a.hardline);lines.push('  WOULD TRADE: '+a.wouldtrade);}}
+    else{lines.push('  '+a.mandate);lines.push('  HARD LINE (author\'s design assumption): '+a.hardline);lines.push('  WOULD TRADE (author\'s design assumption): '+a.wouldtrade);}}
   lines.push('');
-  lines.push('ROLE CONDUCT (from Stone Halpern\'s Appendix A - author\'s April 2026 scenario protocol, Rules 4-6): advocate your documented position in good faith; do not fabricate facts, precedents, or other parties\' positions; do not concede beyond your mandate. In each rationale, distinguish established facts from projections and from strategic claims (Rule 4(g)). Your stated rationale is logged per year for post-simulation review (Rule 4(f)). If your move crosses your HARD LINE, say so explicitly in your rationale and justify it - the page flags hard-line crossings but does not block them. Quantities in these briefs come from the Model Guide (Rosenberg & Myers); qualitative positions come from the author\'s Appendix A.');
+  lines.push('ROLE CONDUCT (the author\'s invented game rules, his Rules 4-6 design): advocate your assigned scenario position in good faith; do not fabricate facts, precedents, or other parties\' positions; do not concede beyond your assigned position. In each rationale, distinguish established facts from projections and from strategic claims (Rule 4(g)). Your stated rationale is logged per year for post-simulation review (Rule 4(f)). If your move crosses your HARD LINE, say so explicitly in your rationale and justify it - the page flags hard-line crossings but does not block them. Quantities in these briefs come from the Model Guide (Rosenberg & Myers); all positions, hard lines, and would-trade stances are the author\'s invented design assumptions, not sourced research and not the real parties\' documented positions.');
   if(session.hist.length){
     lines.push('');
     lines.push('SESSION HISTORY (most recent first, up to 6 years). React to this trajectory and to the other players\' past moves: positions should harden or shift as the lake and the politics evolve. Repeating last year\'s move without a stated reason is weak play.');
@@ -746,7 +748,7 @@ $('resetBtn').onclick=()=>{session=null;setup=null;$('play').classList.add('hidd
 $('logBtn').onclick=()=>{
   if(!session)return;
   const log={artifact:'Lake Mead Water Bank - AI Stakeholder Session (adaptation of Rosenberg and Myers, Divide Reservoir Inflow)',
-    log_type:'Negotiation log (Appendix A Rule 4(f)); reasons are player-stated, or AI self-reported rationale for bridge years',
+    log_type:'Negotiation log (author\'s Rule 4(f) game design); reasons are player-stated, or AI self-reported rationale for bridge years',
     protection_elevation_ft:session.protElev,
     years:session.hist.map(r=>({year:r.year,inflow_maf:r.inflow,mead_end_maf:r.storage,mead_end_elev_ft:r.elev,mode:r.mode,
       accounts:Object.fromEntries(ACCOUNTS.map(a=>[a.id,{withdraw_maf:r.withdraw[a.id],end_balance_maf:r.end[a.id],net_trade_maf:r.detail[a.id].net,vwap_usd_per_af:r.detail[a.id].vwap,stated_reason:r.detail[a.id].reason,hard_line_flag:r.detail[a.id].flag||null}]))}))};
