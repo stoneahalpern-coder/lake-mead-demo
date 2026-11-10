@@ -157,13 +157,20 @@
     </div>
 
     <div id="panelAI" class="hidden">
-      <p class="note"><b>How this works:</b> copy the generated prompt into your own AI chat (for example claude.ai on this Mac — whatever account you have). One AI conversation writes all five user roles' decisions per prompt (LLM role-play of every role in a single conversation, not independent agents — use separate chats if you want genuinely separate players). The prompt gives each role a sourced position, a HARD LINE, and a would-trade position built from cited public sources on the real parties' documented positions (full citations in Methods), plus the author's conduct rules (Rules 4-6). One AI conversation writes the five user roles' decisions as JSON (the Reclamation protection volume is held fixed); paste the JSON back here. This page validates it (bilateral matching trades, withdrawals within available water, price bounds) and runs the accounting. The AI chat step needs internet; everything else runs offline. Decisions are LLM role-play from a single conversation — not independent agents. The AI's text is never rendered as HTML.</p>
+      <p class="note"><b>How this works:</b> copy the generated prompt into your own AI chat (for example claude.ai on this Mac — whatever account you have). Two bridge modes: <b>one conversation</b> writes all five user roles' decisions per prompt (LLM role-play of every role in a single conversation, not independent agents), or <b>five separate chats</b> below - one per party, each seeing only its own brief plus the shared public state and history (independent only to the extent the chats do not share private briefs). The prompt gives each role a sourced position, a HARD LINE, and a would-trade position built from cited public sources on the real parties' documented positions (full citations in Methods), plus the author's conduct rules (Rules 4-6). The AI writes the decisions as JSON (the Reclamation protection volume is held fixed); paste the JSON back here. This page validates it (bilateral matching trades, withdrawals within available water, price bounds) and runs the accounting. The AI chat step needs internet; everything else runs offline. The AI's text is never rendered as HTML.</p>
       <div class="row" style="margin-bottom:8px"><button class="ghost" id="genPromptBtn">Generate prompt for this year</button><button class="ghost" id="copyPromptBtn" disabled>Copy prompt</button></div>
       <div class="promptbox hidden" id="promptOut"></div>
       <label for="aiIn" style="margin-top:10px">Paste the AI's JSON response</label>
       <textarea id="aiIn" placeholder='{"decisions": {"ca": {"withdraw": 3.6, "trades": [{"with":"tr","maf":0.2,"price_per_af":650}], "rationale":"..."}, ...}}'></textarea>
       <div id="aiMsg"></div>
       <button id="applyAiBtn" style="margin-top:8px">Validate &amp; settle year</button>
+      <h3 style="margin:18px 0 6px">Five separate chats (one per party)</h3>
+      <p class="note">Generate one prompt per party: each carries only that party's brief (with its citations) plus the shared public state and history - not the other parties' briefs. Paste each chat's JSON answer into its box; the page reconciles the five into one year and the same checks apply (bilateral matching trades at the same price, withdrawal limits, price bounds; hard-line flags never block). A trade settles only if both sides' chats propose it. Chats are independent only to the extent they do not share private briefs; rationales are self-reported.</p>
+      <div class="row" style="margin-bottom:8px"><button class="ghost" id="gen5Btn">Generate 5 party prompts</button></div>
+      <div id="partyPrompts"></div>
+      <div id="partyInputs" style="margin-top:10px"></div>
+      <div id="ai5Msg"></div>
+      <button id="apply5Btn" style="margin-top:8px">Reconcile &amp; settle year</button>
     </div>
   </div>
 
@@ -214,7 +221,7 @@
   <h3>AI disclosure</h3>
   <ul class="tight">
     <li>Manual mode: every decision is entered by the human player, as in the original model.</li>
-    <li>Live AI bridge: one AI conversation writes the five user roles' decisions per year via a copy/paste bridge (LLM role-play, not independent agents; the page makes no autonomous AI calls). The Reclamation account is fixed. The page validates every number and computes all accounting itself.</li>
+    <li>Live AI bridge: AI conversations write the five user roles' decisions per year via a copy/paste bridge (the page makes no autonomous AI calls). Two modes: one conversation plays all five roles (LLM role-play, not independent agents), or five separate chats - one per party, each receiving only its own brief plus the shared public state and history; the page reconciles the five JSON answers with the same checks (bilateral matching trades, withdrawal limits, price bounds). Separate chats are independent only to the extent they do not share private briefs. Rationales are self-reported in both modes. The Reclamation account is fixed. The page validates every number and computes all accounting itself.</li>
     <li>This page was built with AI assistance. It is a teaching artifact, not water law and not policy findings.</li>
   </ul>
   <h3>Sources</h3>
@@ -431,6 +438,7 @@ function resetAiBridge(){
   $('promptOut').textContent='';$('promptOut').classList.add('hidden');
   $('copyPromptBtn').disabled=true;$('copyPromptBtn').textContent='Copy prompt';
   $('aiIn').value='';$('aiMsg').innerHTML='';
+  $('partyPrompts').innerHTML='';$('partyInputs').innerHTML='';$('ai5Msg').innerHTML='';
 }
 
 function buildDecTable(){
@@ -612,19 +620,8 @@ $('dashSettleBtn').onclick=()=>{
   applyAndRender(res,r.dec,'participant dashboard',null,hardLineCheck(setup,r.dec));
 };
 
-$('genPromptBtn').onclick=()=>{
-  if(!setup)return;
+function histPromptLines(){
   const lines=[];
-  lines.push('You are role-playing ALL FIVE user accounts (California, Arizona, Nevada, Mexico, Tribal Nations of the Lower Basin) in one year of the Lake Mead Water Bank model (Rosenberg & Myers, "Divide Reservoir Inflow"). The Reclamation protection volume is held fixed by the page and is not one of your roles. Write each account\'s one-year decisions from its own perspective and strategy. This is LLM role-play of every role in a single conversation.');
-  lines.push('Each role brief below is built from cited public sources on the real party\'s documented position (full citations in the page\'s Methods). Operational details without a source are marked as the author\'s inference. Quantities cited to the Model Guide are the Guide\'s.');
-  lines.push('');
-  lines.push('YEAR '+(session.year+1)+' STATE (all volumes in maf):');
-  lines.push('Lake Mead storage '+fmt(setup.storage,2)+' maf ('+fmt(setup.elev,1)+' ft); protection elevation '+session.protElev+' ft; inflow this year '+setup.inflow+' maf; lake evaporation '+fmt(setup.evap,3)+' maf.');
-  for(const a of ACCOUNTS){const s=setup.accounts[a.id];lines.push('- '+a.name+': balance '+fmt(s.startBal)+', evaporation share -'+fmt(s.evapShare)+', inflow share +'+fmt(s.inflowShare)+', available before decisions '+fmt(s.avail)+'.');
-    if(a.id==='rec'){lines.push('  '+a.strategy);}
-    else{lines.push('  '+a.mandate);lines.push('  HARD LINE (sourced position): '+a.hardline);lines.push('  WOULD TRADE (sourced position): '+a.wouldtrade);}}
-  lines.push('');
-  lines.push('ROLE CONDUCT (the author\'s game rules, his Rules 4-6 design): advocate your sourced position in good faith; do not fabricate facts, precedents, or other parties\' positions; do not concede beyond your assigned position. In each rationale, distinguish established facts from projections and from strategic claims (Rule 4(g)). Your stated rationale is logged per year for post-simulation review (Rule 4(f)). If your move crosses your HARD LINE, say so explicitly in your rationale and justify it - the page flags hard-line crossings but does not block them. Quantities in these briefs come from the Model Guide (Rosenberg & Myers); positions and hard lines come from the cited public sources, with the author\'s inferences marked.');
   if(session.hist.length){
     lines.push('');
     lines.push('SESSION HISTORY (most recent first, up to 6 years). React to this trajectory and to the other players\' past moves: positions should harden or shift as the lake and the politics evolve. Repeating last year\'s move without a stated reason is weak play.');
@@ -639,6 +636,23 @@ $('genPromptBtn').onclick=()=>{
         s+='.';lines.push(s);}
     }
   }
+  return lines;
+}
+
+$('genPromptBtn').onclick=()=>{
+  if(!setup)return;
+  const lines=[];
+  lines.push('You are role-playing ALL FIVE user accounts (California, Arizona, Nevada, Mexico, Tribal Nations of the Lower Basin) in one year of the Lake Mead Water Bank model (Rosenberg & Myers, "Divide Reservoir Inflow"). The Reclamation protection volume is held fixed by the page and is not one of your roles. Write each account\'s one-year decisions from its own perspective and strategy. This is LLM role-play of every role in a single conversation.');
+  lines.push('Each role brief below is built from cited public sources on the real party\'s documented position (full citations in the page\'s Methods). Operational details without a source are marked as the author\'s inference. Quantities cited to the Model Guide are the Guide\'s.');
+  lines.push('');
+  lines.push('YEAR '+(session.year+1)+' STATE (all volumes in maf):');
+  lines.push('Lake Mead storage '+fmt(setup.storage,2)+' maf ('+fmt(setup.elev,1)+' ft); protection elevation '+session.protElev+' ft; inflow this year '+setup.inflow+' maf; lake evaporation '+fmt(setup.evap,3)+' maf.');
+  for(const a of ACCOUNTS){const s=setup.accounts[a.id];lines.push('- '+a.name+': balance '+fmt(s.startBal)+', evaporation share -'+fmt(s.evapShare)+', inflow share +'+fmt(s.inflowShare)+', available before decisions '+fmt(s.avail)+'.');
+    if(a.id==='rec'){lines.push('  '+a.strategy);}
+    else{lines.push('  '+a.mandate);lines.push('  HARD LINE (sourced position): '+a.hardline);lines.push('  WOULD TRADE (sourced position): '+a.wouldtrade);}}
+  lines.push('');
+  lines.push('ROLE CONDUCT (the author\'s game rules, his Rules 4-6 design): advocate your sourced position in good faith; do not fabricate facts, precedents, or other parties\' positions; do not concede beyond your assigned position. In each rationale, distinguish established facts from projections and from strategic claims (Rule 4(g)). Your stated rationale is logged per year for post-simulation review (Rule 4(f)). If your move crosses your HARD LINE, say so explicitly in your rationale and justify it - the page flags hard-line crossings but does not block them. Quantities in these briefs come from the Model Guide (Rosenberg & Myers); positions and hard lines come from the cited public sources, with the author\'s inferences marked.');
+  for(const l of histPromptLines())lines.push(l);
   lines.push('');
   lines.push('RULES: (1) Each account except Reclamation chooses trades and a withdrawal. (2) Trades are one-year: buy = +maf, sell = -maf, each with an agreed price in $/acre-foot; total compensation = maf x price; reference price points: about $400/af (500-Plus Plan) to $500/af (guide example). (3) Trade volumes across ALL accounts must net to exactly zero — every buy needs a matching sell at the same price. (4) Each account\'s withdrawal must not exceed its available water plus its net trades. (5) Accounts may leave water unwithdrawn to bank it for future years.');
   lines.push('');
@@ -653,6 +667,79 @@ $('copyPromptBtn').onclick=()=>{
   const txt=$('promptOut').textContent;
   if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(()=>{$('copyPromptBtn').textContent='Copied';});}
   else{const r=document.createRange();r.selectNodeContents($('promptOut'));const s=getSelection();s.removeAllRanges();r&&s.addRange(r);document.execCommand('copy');$('copyPromptBtn').textContent='Copied';}
+};
+
+function partyPromptText(a){
+  const others=USERS.filter(id=>id!==a.id);
+  const otherNames=others.map(id=>ACCOUNTS.find(x=>x.id===id).name).join(', ');
+  const lines=[];
+  lines.push('You are role-playing ONE account - '+a.name+' - in one year of the Lake Mead Water Bank model (Rosenberg & Myers, "Divide Reservoir Inflow"). The other parties ('+otherNames+') are being played in separate conversations you cannot see; you receive only your own brief plus the public state and history below. The Reclamation protection volume is held fixed by the page and is not one of the traded accounts.');
+  lines.push('Your brief is built from cited public sources on the real party\'s documented position (full citations in the page\'s Methods). Operational details without a source are marked as the author\'s inference. Quantities cited to the Model Guide are the Guide\'s.');
+  lines.push('');
+  lines.push('YEAR '+(session.year+1)+' STATE (all volumes in maf - public information):');
+  lines.push('Lake Mead storage '+fmt(setup.storage,2)+' maf ('+fmt(setup.elev,1)+' ft); protection elevation '+session.protElev+' ft; inflow this year '+setup.inflow+' maf; lake evaporation '+fmt(setup.evap,3)+' maf.');
+  for(const b of ACCOUNTS){const s=setup.accounts[b.id];lines.push('- '+b.name+': balance '+fmt(s.startBal)+', evaporation share -'+fmt(s.evapShare)+', inflow share +'+fmt(s.inflowShare)+', available before decisions '+fmt(s.avail)+'.');}
+  lines.push('');
+  lines.push('YOUR BRIEF - '+a.name.toUpperCase()+' (private to you - the other parties have their own):');
+  lines.push(a.mandate);
+  lines.push('HARD LINE (sourced position): '+a.hardline);
+  lines.push('WOULD TRADE (sourced position): '+a.wouldtrade);
+  lines.push('');
+  lines.push('ROLE CONDUCT (the author\'s game rules, his Rules 4-6 design): advocate your sourced position in good faith; do not fabricate facts, precedents, or other parties\' positions; do not concede beyond your assigned position. In your rationale, distinguish established facts from projections and from strategic claims (Rule 4(g)). Your stated rationale is logged per year for post-simulation review (Rule 4(f)). If your move crosses your HARD LINE, say so explicitly in your rationale and justify it - the page flags hard-line crossings but does not block them.');
+  for(const l of histPromptLines())lines.push(l);
+  lines.push('');
+  lines.push('RULES: (1) You choose '+a.name+'\'s trades and withdrawal only; the other parties\' decisions arrive from their own chats. (2) Trades are one-year: buy = +maf, sell = -maf, each with an agreed price in $/acre-foot; total compensation = maf x price; reference price points: about $400/af (500-Plus Plan) to $500/af (guide example). (3) A trade settles only if the counterparty\'s chat proposes the matching trade at the same volume and price - the page reconciles all five answers and rejects mismatches, so name counterparties plainly ('+others.join(', ')+'). (4) Your withdrawal must not exceed your available water plus your net trades. (5) You may leave water unwithdrawn to bank it for future years.');
+  lines.push('');
+  lines.push('RESPOND WITH JSON ONLY, no other text, exactly this shape:');
+  lines.push('{"withdraw": 0.0, "trades": [{"with": "'+others[0]+'", "maf": 0.2, "price_per_af": 500}], "rationale": "one or two sentences"}');
+  lines.push('Use "trades": [] if you do not trade.');
+  return lines.join('\n');
+}
+
+$('gen5Btn').onclick=()=>{
+  if(!setup)return;
+  let h='';
+  for(const a of ACCOUNTS){
+    if(a.id==='rec')continue;
+    h+='<div style="margin:10px 0"><b>'+a.name+'</b> <button class="ghost small" id="cp_'+a.id+'">Copy prompt</button><div class="promptbox" id="pp_'+a.id+'" style="margin-top:4px"></div></div>';
+  }
+  $('partyPrompts').innerHTML=h;
+  for(const a of ACCOUNTS){
+    if(a.id==='rec')continue;
+    $('pp_'+a.id).textContent=partyPromptText(a);
+    $('cp_'+a.id).onclick=(id=>()=>{const txt=$('pp_'+id).textContent;if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(()=>{$('cp_'+id).textContent='Copied';});}else{try{const r=document.createRange();r.selectNodeContents($('pp_'+id));const s=getSelection();s.removeAllRanges();s.addRange(r);if(document.execCommand)document.execCommand('copy');}catch(e){}$('cp_'+id).textContent='Copied';}})(a.id);
+  }
+  let hi='';
+  for(const a of ACCOUNTS){if(a.id==='rec')continue;hi+='<label for="pi_'+a.id+'" style="margin-top:8px">'+a.name+' - paste its JSON answer</label><textarea id="pi_'+a.id+'" placeholder=\'{"withdraw": 0.0, "trades": [], "rationale": "..."}\'></textarea>';}
+  $('partyInputs').innerHTML=hi;
+  $('ai5Msg').innerHTML='';
+};
+
+function normPartyDecision(id,obj){
+  let d=obj;
+  if(d&&typeof d==='object'&&d.decisions&&typeof d.decisions==='object')d=d.decisions[id];
+  else if(d&&typeof d==='object'&&d[id]&&typeof d[id]==='object')d=d[id];
+  return d;
+}
+$('apply5Btn').onclick=()=>{
+  if(!setup){$('ai5Msg').innerHTML='<div class="badbox">Compute the year setup first.</div>';return;}
+  const dec={rec:{withdraw:0,trades:[]}};
+  for(const id of USERS){
+    const el=$('pi_'+id);
+    if(!el||!el.value.trim()){$('ai5Msg').innerHTML='<div class="badbox">Missing the JSON answer for '+id+' - press "Generate 5 party prompts" and paste each chat\'s response into its box.</div>';return;}
+    if(el.value.length>20000){$('ai5Msg').innerHTML='<div class="badbox">Response for '+id+' is too large - paste only the JSON decision object.</div>';return;}
+    let obj;
+    try{obj=JSON.parse(cleanJsonInput(el.value));}catch(e){$('ai5Msg').innerHTML='<div class="badbox">Not valid JSON for '+id+': '+String(e.message||e)+'</div>';return;}
+    const d=normPartyDecision(id,obj);
+    if(!d||typeof d!=='object'){$('ai5Msg').innerHTML='<div class="badbox">Could not find a decision object for '+id+'.</div>';return;}
+    if(typeof d.rationale!=='string'||!d.rationale.trim()){$('ai5Msg').innerHTML='<div class="badbox">Missing a written rationale for '+id+' - every party needs one.</div>';return;}
+    dec[id]={withdraw:Number(d.withdraw),trades:Array.isArray(d.trades)?d.trades.map(t=>({with:String(t.with),maf:Number(t.maf),price_per_af:Number(t.price_per_af)})):[],rationale:d.rationale.slice(0,600)};
+  }
+  const res=settle(session,setup,dec);
+  if(res.errors){$('ai5Msg').innerHTML='<div class="badbox"><b>Rejected - fix and repaste:</b><ul class="tight"><li>'+res.errors.join('</li><li>')+'</li></ul></div>';return;}
+  $('ai5Msg').innerHTML='';
+  applyAndRender(res,dec,'5 separate AI chats',null,hardLineCheck(setup,dec));
+  resetAiBridge();
 };
 
 function cleanJsonInput(raw){
@@ -724,7 +811,7 @@ function renderReasons(){
   const prevW={};for(const a of ACCOUNTS)prevW[a.id]=null;
   let h='<h3>Positions and stated reasons by year</h3><p class="note">Reasons are <b>player-stated</b> for Manual play and Participant dashboard years; for Live AI bridge years they are the AI\'s <b>self-reported rationale</b>, not an observed motive. Change columns compare each account to its own prior year. This is the raw material for the study question of where each party\'s position moved and why.</p>';
   h+='<div style="overflow-x:auto"><table><tr><th>Year</th><th>Account</th><th>Withdrew (maf)</th><th>&Delta; withdraw</th><th>Net trade (maf)</th><th>Price settled ($/af)</th><th>Stated reason</th></tr>';
-  const modeShort=m=>m.indexOf('AI')===0?'AI bridge':(m.indexOf('participant')===0?'dashboard':'manual');
+  const modeShort=m=>m.indexOf('5 separate')===0?'5 AI chats':(m.indexOf('AI')===0?'AI bridge':(m.indexOf('participant')===0?'dashboard':'manual'));
   for(const r of session.hist){
     let first=true;
     for(const a of ACCOUNTS){
