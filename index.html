@@ -172,6 +172,7 @@
   <h2>3 · Session history</h2>
   <div id="chartWrap"></div>
   <div style="overflow-x:auto"><table id="histTable"></table></div>
+  <div id="reasonWrap"></div>
   <div class="row" style="margin-top:12px"><button class="ghost small" id="undoBtn">Undo last year</button><button class="ghost small" id="resetBtn">Reset session</button></div>
 </section>
 
@@ -388,12 +389,13 @@ function resetAiBridge(){
 }
 
 function buildDecTable(){
-  let h='<tr><th>Account</th><th>Trades (one year)</th><th>Withdraw (maf)</th></tr>';
+  let h='<tr><th>Account</th><th>Trades (one year)</th><th>Withdraw (maf)</th><th>Reason (one line)</th></tr>';
   for(const a of ACCOUNTS){
-    if(a.id==='rec'){h+='<tr><td>'+chip(a)+'</td><td class="strategy">Maintains protection volume (no trades/withdrawals in this adaptation)</td><td>—</td></tr>';continue;}
+    if(a.id==='rec'){h+='<tr><td>'+chip(a)+'</td><td class="strategy">Maintains protection volume (no trades/withdrawals in this adaptation)</td><td>—</td><td>—</td></tr>';continue;}
     h+='<tr><td>'+chip(a)+'<div class="strategy">'+a.strategy+'</div></td>'
       +'<td><div id="trades_'+a.id+'"></div><button class="ghost small" onclick="addTradeRow(\''+a.id+'\')">+ trade</button></td>'
-      +'<td><input type="number" id="wd_'+a.id+'" min="0" step="0.05" value="0" style="width:90px"></td></tr>';
+      +'<td><input type="number" id="wd_'+a.id+'" min="0" step="0.05" value="0" style="width:90px"></td>'
+      +'<td><input type="text" id="rsn_'+a.id+'" maxlength="200" placeholder="why this move" style="width:170px"></td></tr>';
   }
   $('decTable').innerHTML=h;
 }
@@ -418,7 +420,7 @@ function readManual(){
       const maf=parseFloat(r.querySelector('.t_maf').value);
       if(isFinite(maf)&&maf!==0){trades.push({with:r.querySelector('.t_with').value,maf:maf,price_per_af:parseFloat(r.querySelector('.t_price').value)});}
     });
-    dec[a.id]={withdraw:wd,trades};
+    dec[a.id]={withdraw:wd,trades,reason:($('rsn_'+a.id).value||'').trim().slice(0,200)||undefined};
   }
   return dec;
 }
@@ -436,20 +438,25 @@ function showResult(res,decisions,mode){
   h+='</table></div>';
   h+='<div class="okbox">End of year: Lake Mead holds <b>'+fmt(res.eoyStorage,2)+' maf</b> ('+elevTxt(res.eoyStorage)+(overCapacity(res.eoyStorage)?'':' ft')+'). Mass balance exact: start + inflow − evaporation − withdrawals = end (error '+res.massErr.toExponential(1)+' maf).</div>';
   $('yearResult').innerHTML=capWarn(res.eoyStorage)+h;
-  // rationale: append as text nodes only (AI text is never rendered as HTML)
-  const rats=ACCOUNTS.filter(a=>decisions[a.id]&&decisions[a.id].rationale);
+  // rationale/reasons: append as text nodes only (AI text is never rendered as HTML)
+  const rats=ACCOUNTS.filter(a=>decisions[a.id]&&(decisions[a.id].rationale||decisions[a.id].reason));
   if(rats.length){
-    const h3=document.createElement('h3');h3.textContent='Decision rationale ('+mode+')';
+    const h3=document.createElement('h3');h3.textContent='Stated reasons ('+mode+(mode.indexOf('AI')===0?' self-reported rationale':', player-stated')+')';
     const ul=document.createElement('ul');ul.className='tight';
-    for(const a of rats){const li=document.createElement('li');const b=document.createElement('b');b.textContent=a.name+': ';li.appendChild(b);li.appendChild(document.createTextNode(decisions[a.id].rationale));ul.appendChild(li);}
+    for(const a of rats){const li=document.createElement('li');const b=document.createElement('b');b.textContent=a.name+': ';li.appendChild(b);li.appendChild(document.createTextNode(decisions[a.id].rationale||decisions[a.id].reason));ul.appendChild(li);}
     $('yearResult').appendChild(h3);$('yearResult').appendChild(ul);
   }
 }
 
+function tradeVwap(d){
+  if(!d||!d.trades||!d.trades.length)return null;
+  let pv=0,tv=0;for(const t of d.trades){const v=Math.abs(t.maf);pv+=v*t.price_per_af;tv+=v;}
+  return tv>0?pv/tv:null;
+}
 function applyAndRender(res,decisions,mode,msgDiv){
   session.year+=1;
   for(const a of ACCOUNTS)session.bal[a.id]=res.end[a.id];
-  session.hist.push({year:session.year,inflow:setup.inflow,storage:res.eoyStorage,elev:res.eoyElev,withdraw:Object.fromEntries(ACCOUNTS.map(a=>[a.id,(decisions[a.id]||{}).withdraw||0])),end:Object.assign({},res.end)});
+  session.hist.push({year:session.year,inflow:setup.inflow,storage:res.eoyStorage,elev:res.eoyElev,mode:mode,withdraw:Object.fromEntries(ACCOUNTS.map(a=>[a.id,(decisions[a.id]||{}).withdraw||0])),end:Object.assign({},res.end),detail:Object.fromEntries(ACCOUNTS.map(a=>[a.id,{net:res.net[a.id],vwap:tradeVwap(decisions[a.id]),reason:(decisions[a.id]||{}).reason||(decisions[a.id]||{}).rationale||''}]))});
   showResult(res,decisions,mode);
   renderKpis();renderHist();
   $('yrNum').textContent=session.year+1;
@@ -492,6 +499,7 @@ function buildDashboard(){
     h+='<tr><td>Net trade volume all participants (should be zero)</td><td class="calc" id="dn_'+a.id+'">0.000</td></tr>';
     h+='<tr><td>Available Water [maf]</td><td class="calc" id="da_'+a.id+'">'+fmt(s.avail)+'</td></tr>';
     if(a.id!=='rec')h+='<tr><td>Enter withdraw [maf] within available water</td><td><input class="salmon" type="number" id="dw_'+a.id+'" step="0.05" min="0" placeholder="0.0"></td></tr>';
+    if(a.id!=='rec')h+='<tr><td>Reason for this move (one line)</td><td><input class="salmon" type="text" id="dr_'+a.id+'" maxlength="200" placeholder="why this trade / withdrawal"></td></tr>';
     h+='<tr><td>End of Year Balance [maf]</td><td class="calc" id="de_'+a.id+'">'+fmt(s.avail)+'</td></tr>';
     h+='</table></div>';
   }
@@ -530,7 +538,7 @@ function readDash(){
   const name=id=>ACCOUNTS.find(a=>a.id===id).name;
   const buys=[],sells=[];
   for(const id of USERS){
-    dec[id]={withdraw:w[id],trades:[]};
+    dec[id]={withdraw:w[id],trades:[],reason:($('dr_'+id).value||'').trim().slice(0,200)||undefined};
     if(v[id]!==0){
       if(!isFinite(p[id])||p[id]<=0||p[id]>10000)return {err:name(id)+' is trading but has no valid price — enter a positive $/af.'};
       (v[id]>0?buys:sells).push({id,vol:Math.abs(v[id]),price:p[id]});
@@ -640,7 +648,35 @@ function renderHist(){
   let h='<tr><th>Year</th><th>Inflow</th>'+ACCOUNTS.map(a=>'<th>'+a.name+' withdraw</th>').join('')+'<th>Mead end (maf / ft)</th></tr>';
   for(const r of session.hist){h+='<tr><td>'+r.year+'</td><td>'+fmt(r.inflow,1)+'</td>'+ACCOUNTS.map(a=>'<td>'+fmt(r.withdraw[a.id],2)+'</td>').join('')+'<td>'+fmt(r.storage,2)+' / '+(overCapacity(r.storage)?'>1,229':fmt(r.elev,1))+'</td></tr>';}
   $('histTable').innerHTML=h;
+  renderReasons();
 }
+
+function renderReasons(){
+  const div=$('reasonWrap');
+  if(!session||!session.hist.length){div.innerHTML='';return;}
+  const prevW={};for(const a of ACCOUNTS)prevW[a.id]=null;
+  let h='<h3>Positions and stated reasons by year</h3><p class="note">Reasons are <b>player-stated</b> for Manual play and Participant dashboard years; for Live AI bridge years they are the AI\'s <b>self-reported rationale</b>, not an observed motive. Change columns compare each account to its own prior year. This is the raw material for the study question of where each party\'s position moved and why.</p>';
+  h+='<div style="overflow-x:auto"><table><tr><th>Year</th><th>Account</th><th>Withdrew (maf)</th><th>&Delta; withdraw</th><th>Net trade (maf)</th><th>Price settled ($/af)</th><th>Stated reason</th></tr>';
+  const modeShort=m=>m.indexOf('AI')===0?'AI bridge':(m.indexOf('participant')===0?'dashboard':'manual');
+  for(const r of session.hist){
+    let first=true;
+    for(const a of ACCOUNTS){
+      if(a.id==='rec')continue;
+      const d=r.detail[a.id];
+      const delta=prevW[a.id]===null?'—':((r.withdraw[a.id]-prevW[a.id])>=0?'+':'')+fmt(r.withdraw[a.id]-prevW[a.id],2);
+      prevW[a.id]=r.withdraw[a.id];
+      h+='<tr>'+(first?'<td rowspan="5">'+r.year+'</td>':'')
+        +'<td>'+chip(a)+'</td><td>'+fmt(r.withdraw[a.id],2)+'</td><td>'+delta+'</td>'
+        +'<td>'+(Math.abs(d.net)>1e-9?((d.net>=0?'+':'')+fmt(d.net)):'—')+'</td>'
+        +'<td>'+(d.vwap===null?'—':Math.round(d.vwap).toLocaleString('en-US'))+'</td>'
+        +'<td style="text-align:left">'+(d.reason?'<span class="pill" style="background:#f1f5f9;color:#475569">'+modeShort(r.mode)+'</span> ':'')+escapeTxt(d.reason||'—')+'</td></tr>';
+      first=false;
+    }
+  }
+  h+='</table></div>';
+  div.innerHTML=h;
+}
+function escapeTxt(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
 $('undoBtn').onclick=()=>{
   if(!session||!session.hist.length)return;
