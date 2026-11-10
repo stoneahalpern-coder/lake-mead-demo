@@ -50,6 +50,10 @@
   textarea{width:100%;min-height:150px;font:12.5px/1.5 ui-monospace,Menlo,monospace;border:1px solid #cbd5e1;border-radius:8px;padding:10px}
   .promptbox{background:#0f172a;color:#e2e8f0;border-radius:10px;padding:14px;font:12px/1.5 ui-monospace,Menlo,monospace;white-space:pre-wrap;max-height:300px;overflow:auto}
   .strategy{font-size:12px;color:var(--muted)}
+  input.salmon{background:#f8cbad;border:1px solid #dfa06f;width:110px}
+  .calc{color:#c2410c;font-weight:700;white-space:nowrap}
+  .dashpanel{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:#fffdf9}
+  .dashpanel table td:first-child{font-size:12.5px;color:var(--muted)}
   .tabs{display:flex;gap:8px;margin:4px 0 14px}
   .hidden{display:none}
   ul.tight{margin:6px 0 6px 18px;padding:0} ul.tight li{margin:3px 0;font-size:13.5px}
@@ -132,6 +136,7 @@
     <h3>Decisions — who is playing?</h3>
     <div class="tabs">
       <button class="ghost small sel" id="tabManual">Manual play</button>
+      <button class="ghost small" id="tabDash">Participant dashboard</button>
       <button class="ghost small" id="tabAI">Live AI bridge</button>
     </div>
 
@@ -140,6 +145,13 @@
       <div style="overflow-x:auto"><table id="decTable"></table></div>
       <div id="manMsg"></div>
       <button id="settleBtn" style="margin-top:10px">Validate &amp; settle year</button>
+    </div>
+
+    <div id="panelDash" class="hidden">
+      <p class="note"><b>David Rosenberg's participant dashboard layout</b> (Guide Step 5 — the spreadsheet layout from his session walkthrough). Each stakeholder fills only the salmon cells: net volume to buy(+) or sell(−), price per acre-foot, and withdrawal. Starting available water, compensation, the net-trade tracker, available water, and end-of-year balance are computed live. Two deliberate differences from the sheet, same accounting engine as the rest of this page: price is entered as a positive $/af and compensation is signed automatically (buyers pay −, sellers receive +); and the two sides of each matched trade must enter the same price, as in Manual play. Reclamation's protection volume stays fixed in this adaptation.</p>
+      <div id="dashGrid" class="grid2"></div>
+      <div id="dashMsg"></div>
+      <button id="dashSettleBtn" style="margin-top:10px">Validate &amp; settle year</button>
     </div>
 
     <div id="panelAI" class="hidden">
@@ -179,6 +191,7 @@
     <li>The Step 3 initial storage split is a negotiated joint choice in the published model; here it defaults to the Guide's pro-rata suggestion.</li>
     <li>Protection elevation is fixed at session start (1,020 or 1,000 ft). Mid-session changes are possible in the full model.</li>
     <li>Only two price points are documented in the Guide: about $400/af (500-Plus Plan, $200M for 0.5 maf/yr) and the $500/af worked trade example. Any price entered in play (like the $650/af in a test session) is the player's or AI's own choice within the 0–10,000 $/af bound — an illustration of the mechanism, not a documented or predicted price.</li>
+    <li>The Participant dashboard tab mirrors the per-account spreadsheet layout from David Rosenberg's session walkthrough (salmon input cells; starting available water, compensation, net-trade tracker, available water, and end-of-year balance computed live). Differences from his sheet, by design: price is entered unsigned with compensation signed by direction (his example slide signs the price cell and its California row contradicts its own annotated formula Compensation = Price × Volume); matched trades must agree on one price (his sheet checks only that volumes net to zero); each account enters one net volume rather than per-trade columns; and Reclamation's protection volume stays fixed rather than being played.</li>
   </ul>
   <h3>AI disclosure</h3>
   <ul class="tight">
@@ -365,6 +378,7 @@ $('setupYearBtn').onclick=()=>{
   $('yearSetup').innerHTML=h;
   $('decide').classList.remove('hidden');$('yearResult').innerHTML='';
   buildDecTable();
+  buildDashboard();
   resetAiBridge();
 };
 function resetAiBridge(){
@@ -452,8 +466,95 @@ $('settleBtn').onclick=()=>{
 };
 
 // tabs
-$('tabManual').onclick=()=>{$('tabManual').classList.add('sel');$('tabAI').classList.remove('sel');$('panelManual').classList.remove('hidden');$('panelAI').classList.add('hidden');};
-$('tabAI').onclick=()=>{$('tabAI').classList.add('sel');$('tabManual').classList.remove('sel');$('panelAI').classList.remove('hidden');$('panelManual').classList.add('hidden');};
+function showTab(name){
+  for(const t of ['Manual','Dash','AI']){$('tab'+t).classList.remove('sel');$('panel'+t).classList.add('hidden');}
+  $('tab'+name).classList.add('sel');$('panel'+name).classList.remove('hidden');
+}
+$('tabManual').onclick=()=>showTab('Manual');
+$('tabDash').onclick=()=>showTab('Dash');
+$('tabAI').onclick=()=>showTab('AI');
+
+// ---- Participant dashboard (David Rosenberg's spreadsheet layout, Guide Step 5) ----
+function buildDashboard(){
+  if(!setup)return;
+  let h='';
+  for(const a of ACCOUNTS){
+    const s=setup.accounts[a.id];
+    h+='<div class="dashpanel"><h3 style="margin-top:0">'+chip(a)+'</h3><table>';
+    h+='<tr><td>Starting Available Water [maf]</td><td class="calc" id="ds_'+a.id+'">'+fmt(s.avail)+'</td></tr>';
+    if(a.id==='rec'){
+      h+='<tr><td colspan="2" class="strategy" style="text-align:left">Held fixed in this adaptation — the protection volume does not trade and cannot be withdrawn.</td></tr>';
+    }else{
+      h+='<tr><td>Enter volume to Buy(+) or Sell(−) [maf]</td><td><input class="salmon" type="number" id="dv_'+a.id+'" step="0.05" placeholder="0.0"></td></tr>';
+      h+='<tr><td>Enter price per acre-foot [$/af]</td><td><input class="salmon" type="number" id="dp_'+a.id+'" step="10" min="0" max="10000" placeholder="e.g. 500"></td></tr>';
+      h+='<tr><td>Compensation [Mill]</td><td class="calc" id="dc_'+a.id+'">—</td></tr>';
+    }
+    h+='<tr><td>Net trade volume all participants (should be zero)</td><td class="calc" id="dn_'+a.id+'">0.000</td></tr>';
+    h+='<tr><td>Available Water [maf]</td><td class="calc" id="da_'+a.id+'">'+fmt(s.avail)+'</td></tr>';
+    if(a.id!=='rec')h+='<tr><td>Enter withdraw [maf] within available water</td><td><input class="salmon" type="number" id="dw_'+a.id+'" step="0.05" min="0" placeholder="0.0"></td></tr>';
+    h+='<tr><td>End of Year Balance [maf]</td><td class="calc" id="de_'+a.id+'">'+fmt(s.avail)+'</td></tr>';
+    h+='</table></div>';
+  }
+  $('dashGrid').innerHTML=h;
+  for(const a of ACCOUNTS){if(a.id==='rec')continue;
+    $('dv_'+a.id).oninput=recalcDash;$('dp_'+a.id).oninput=recalcDash;$('dw_'+a.id).oninput=recalcDash;}
+  recalcDash();
+}
+function dashVals(){
+  const v={},p={},w={};let net=0;
+  for(const a of ACCOUNTS){if(a.id==='rec')continue;
+    v[a.id]=parseFloat($('dv_'+a.id).value)||0;
+    p[a.id]=parseFloat($('dp_'+a.id).value);
+    w[a.id]=parseFloat($('dw_'+a.id).value)||0;
+    net+=v[a.id];}
+  return {v,p,w,net};
+}
+function recalcDash(){
+  if(!setup)return;
+  const {v,p,w,net}=dashVals();
+  const netTxt=(net>=0?'+':'')+fmt(net)+(Math.abs(net)<1e-9?' ✓':'');
+  for(const a of ACCOUNTS){
+    const s=setup.accounts[a.id];
+    if(a.id==='rec'){$('dn_'+a.id).textContent=netTxt;$('da_'+a.id).textContent=fmt(s.avail);$('de_'+a.id).textContent=fmt(s.avail);continue;}
+    const comp=(v[a.id]&&isFinite(p[a.id]))?-v[a.id]*p[a.id]*1e6:0;
+    $('dc_'+a.id).textContent=(v[a.id]&&isFinite(p[a.id]))?((comp>0?'+':'')+fmtMoney(comp)):'—';
+    $('dn_'+a.id).textContent=netTxt;
+    const av=s.avail+v[a.id];
+    $('da_'+a.id).textContent=fmt(av);
+    $('de_'+a.id).textContent=fmt(av-w[a.id]);
+  }
+}
+function readDash(){
+  const dec={rec:{withdraw:0,trades:[]}};
+  const {v,p,w,net}=dashVals();
+  const name=id=>ACCOUNTS.find(a=>a.id===id).name;
+  const buys=[],sells=[];
+  for(const id of USERS){
+    dec[id]={withdraw:w[id],trades:[]};
+    if(v[id]!==0){
+      if(!isFinite(p[id])||p[id]<=0||p[id]>10000)return {err:name(id)+' is trading but has no valid price — enter a positive $/af.'};
+      (v[id]>0?buys:sells).push({id,vol:Math.abs(v[id]),price:p[id]});
+    }
+  }
+  if(Math.abs(net)>1e-9)return {err:'Net trade volume is '+(net>=0?'+':'')+fmt(net)+' maf, not zero — every buy needs a matching sell (David\'s tracker row above shows the running total).'};
+  let bi=0,si=0;
+  while(bi<buys.length&&si<sells.length){
+    const b=buys[bi],s=sells[si],x=Math.min(b.vol,s.vol);
+    if(Math.abs(b.price-s.price)>0.005)return {err:name(b.id)+' and '+name(s.id)+' match on volume but entered different prices ($'+b.price+' vs $'+s.price+'/af) — a trade has one agreed price; align and retry.'};
+    dec[b.id].trades.push({with:s.id,maf:x,price_per_af:b.price});
+    dec[s.id].trades.push({with:b.id,maf:-x,price_per_af:b.price});
+    b.vol-=x;s.vol-=x;if(b.vol<1e-9)bi++;if(s.vol<1e-9)si++;
+  }
+  return {dec};
+}
+$('dashSettleBtn').onclick=()=>{
+  const r=readDash();
+  if(r.err){$('dashMsg').innerHTML='<div class="badbox"><b>Not settled:</b> '+r.err+'</div>';return;}
+  const res=settle(session,setup,r.dec);
+  if(res.errors){$('dashMsg').innerHTML='<div class="badbox"><b>Not settled:</b><ul class="tight"><li>'+res.errors.join('</li><li>')+'</li></ul></div>';return;}
+  $('dashMsg').innerHTML='';
+  applyAndRender(res,r.dec,'participant dashboard');
+};
 
 $('genPromptBtn').onclick=()=>{
   if(!setup)return;
