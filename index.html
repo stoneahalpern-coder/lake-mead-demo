@@ -134,6 +134,7 @@
 
   <div id="decide" class="hidden">
     <h3>Decisions — who is playing?</h3>
+    <p class="note"><b>Session rules (the game's constitution):</b> trades are one-year and must net to zero across accounts; each trade has one agreed price; withdrawals cannot exceed available water; balances carry over year to year; every player states a one-line reason each year (logged for review); hard lines are flagged, never blocked; play in good faith from your mandate (Appendix A Rules 4-6, author's April 2026 protocol).</p>
     <div class="tabs">
       <button class="ghost small sel" id="tabManual">Manual play</button>
       <button class="ghost small" id="tabDash">Participant dashboard</button>
@@ -155,7 +156,7 @@
     </div>
 
     <div id="panelAI" class="hidden">
-      <p class="note"><b>How this works:</b> copy the generated prompt into your own AI chat (for example claude.ai on this Mac — whatever account you have). One AI conversation writes the five user roles' decisions as JSON (the Reclamation protection volume is held fixed); paste the JSON back here. This page validates it (bilateral matching trades, withdrawals within available water, price bounds) and runs the accounting. The AI chat step needs internet; everything else runs offline. Decisions are LLM role-play from a single conversation — not independent agents. The AI's text is never rendered as HTML.</p>
+      <p class="note"><b>How this works:</b> copy the generated prompt into your own AI chat (for example claude.ai on this Mac — whatever account you have). One AI conversation writes all five user roles' decisions per prompt (LLM role-play of every role in a single conversation, not independent agents — use separate chats if you want genuinely separate players). The prompt gives each role a mandate, a HARD LINE, and a would-trade position from Stone's Appendix A (author's April 2026 protocol), plus conduct rules (Rules 4–6). One AI conversation writes the five user roles' decisions as JSON (the Reclamation protection volume is held fixed); paste the JSON back here. This page validates it (bilateral matching trades, withdrawals within available water, price bounds) and runs the accounting. The AI chat step needs internet; everything else runs offline. Decisions are LLM role-play from a single conversation — not independent agents. The AI's text is never rendered as HTML.</p>
       <div class="row" style="margin-bottom:8px"><button class="ghost" id="genPromptBtn">Generate prompt for this year</button><button class="ghost" id="copyPromptBtn" disabled>Copy prompt</button></div>
       <div class="promptbox hidden" id="promptOut"></div>
       <label for="aiIn" style="margin-top:10px">Paste the AI's JSON response</label>
@@ -173,7 +174,8 @@
   <div id="chartWrap"></div>
   <div style="overflow-x:auto"><table id="histTable"></table></div>
   <div id="reasonWrap"></div>
-  <div class="row" style="margin-top:12px"><button class="ghost small" id="undoBtn">Undo last year</button><button class="ghost small" id="resetBtn">Reset session</button></div>
+  <div class="row" style="margin-top:12px"><button class="ghost small" id="undoBtn">Undo last year</button><button class="ghost small" id="resetBtn">Reset session</button><button class="ghost small" id="logBtn">Copy session log (JSON)</button></div>
+  <p class="note" id="logNote">The session log is the Appendix A Rule 4(f) negotiation log: per year, every account's withdrawal, trades, settled prices, stated reasons, and hard-line flags - ready to paste into the project brief or AI collaboration log.</p>
 </section>
 
 <section id="methods">
@@ -193,6 +195,9 @@
     <li>Protection elevation is fixed at session start (1,020 or 1,000 ft). Mid-session changes are possible in the full model.</li>
     <li>Only two price points are documented in the Guide: about $400/af (500-Plus Plan, $200M for 0.5 maf/yr) and the $500/af worked trade example. Any price entered in play (like the $650/af in a test session) is the player's or AI's own choice within the 0–10,000 $/af bound — an illustration of the mechanism, not a documented or predicted price.</li>
     <li>The Participant dashboard tab mirrors the per-account spreadsheet layout from David Rosenberg's session walkthrough (salmon input cells; starting available water, compensation, net-trade tracker, available water, and end-of-year balance computed live). Differences from his sheet, by design: price is entered unsigned with compensation signed by direction (his example slide signs the price cell and its California row contradicts its own annotated formula Compensation = Price × Volume); matched trades must agree on one price (his sheet checks only that volumes net to zero); each account enters one net volume rather than per-trade columns; and Reclamation's protection volume stays fixed rather than being played.</li>
+    <li>Role briefs, hard lines, and would-trade positions (shown in the player panels and the Live AI bridge prompt) are built from Stone Halpern's Appendix A — the author's April 2026 scenario protocol: California senior-ag vs junior-MWD priority, Arizona junior CAP priority with first-tier exposure, Nevada scarcity and conservation leadership, Mexico's 1.5 MAF 1944 Treaty delivery, tribal Winters (1908) reserved rights. Legal anchors (1922 Compact, 1928 BCPA, 1944 Treaty, Arizona v. California decrees, Winters) are well established; appendix figures are re-verified or marked UNVERIFIED as follows. The appendix's Lower Basin shortage-tier volumes (592k / 640k / 720k AF at 1,075 / 1,050 / 1,025 ft) are UNVERIFIED composites and are not used anywhere on this page — the official 2007 Interim Guidelines / 2019 DCP tables express tiers as separate per-state reductions with California excluded from early tiers. The Mexico 1.4 MAF treaty-flag threshold is the appendix's protocol value, UNVERIFIED against the IBWC Minute 323 text. The appendix's ~900,000 AF quantified tribal-rights figure (Fort Mojave, Chemehuevi, CRIT) is UNVERIFIED and not used — the tribal account follows the Model Guide's 0.95 MAF Ten Tribes Partnership figure.</li>
+    <li>Hard-line checks flag but never block: when a settled move crosses a player's stated hard line, the year result and the history table mark it. The Positions and stated reasons table doubles as the Appendix A Rule 4(f) negotiation log (positions, concessions, stated reasons, hard-line crossings, per year) and exports as JSON via "Copy session log".</li>
+    <li>What a session can and cannot show: it shows where each played position moved year to year (withdrawals, trades, prices), what the players said drove each move, and where hard lines held or broke - raw material for discussing a zone of possible agreement. It does not show what real states, Mexico, or Tribal Nations would do: roles are played by people or by one AI conversation from simplified mandates, and AI rationales are self-reported, not observed motives.</li>
   </ul>
   <h3>AI disclosure</h3>
   <ul class="tight">
@@ -238,11 +243,26 @@ function evapAf(storageMaf){return 6.0*storageToArea(storageMaf)/1e6;} // 6 ft/y
 
 const ACCOUNTS=[
   {id:'rec',name:'Reclamation',color:'#64748b',alloc:0,strategy:'Hold the protection elevation (2019 DCP default 1,020 ft). The published model allows lowering it mid-session as a joint policy choice; this adaptation fixes it at session start.'},
-  {id:'ca',name:'California',color:'#2563eb',alloc:4.4,shortShare:0.367,tribalLoc:0.164,strategy:'Cut back from 4.4 maf/yr per shortage sharing; buy water to reduce mandatory conservation; save some for future years (Guide Table 1a).'},
-  {id:'az',name:'Arizona',color:'#d97706',alloc:2.8,shortShare:0.43,tribalLoc:0.822,strategy:'Cut back from 2.8 maf/yr; buy water to reduce mandatory conservation; save some for future years.'},
-  {id:'nv',name:'Nevada',color:'#059669',alloc:0.3,shortShare:0.036,tribalLoc:0.013,strategy:'Cut back from 0.3 maf/yr; buy water; bank savings for future years.'},
-  {id:'mx',name:'Mexico',color:'#dc2626',alloc:1.5,shortShare:0.167,tribalLoc:0,strategy:'Cut back from 1.5 maf/yr; conserve beyond mandatory targets; may lease water to fund non-water projects.'},
-  {id:'tr',name:'Tribal Nations of the Lower Basin',color:'#7c3aed',alloc:0.95,strategy:'Manage 0.95 maf of settled rights independently; about 0.47 currently used; lease settled, undeveloped water to acquire capital; save for future use (Ten Tribes Partnership 2018, via Guide).'}
+  {id:'ca',name:'California',color:'#2563eb',alloc:4.4,shortShare:0.367,tribalLoc:0.164,strategy:'Cut back from 4.4 maf/yr per shortage sharing; buy water to reduce mandatory conservation; save some for future years (Guide Table 1a).',
+   mandate:'Mandate: 4.4 MAF compact allocation (Boulder Canyon Project Act 1928); internal priority structure - senior agricultural districts (Imperial, Coachella, Palo Verde) ahead of junior municipal (Metropolitan Water District); historical reliance on surplus flows.',
+   hardline:'In a shortage year California does not sell water: its senior priority means shortage falls on others first, and cuts inside California fall on junior MWD before the senior ag districts.',
+   wouldtrade:'Buys water and funds conservation, reuse, or desal deals to protect MWD municipal supply; pays premium prices in dry years.'},
+  {id:'az',name:'Arizona',color:'#d97706',alloc:2.8,shortShare:0.43,tribalLoc:0.822,strategy:'Cut back from 2.8 maf/yr; buy water to reduce mandatory conservation; save some for future years.',
+   mandate:'Mandate: 2.8 MAF allocation (BCPA 1928) but the Central Arizona Project holds junior priority on the Lower Basin mainstream (Basin Project Act 1968) - first-tier shortage exposure; heavy Phoenix/Tucson municipal dependence.',
+   hardline:'In a shortage year Arizona does not sell water: it is first in line for cuts and must protect municipal CAP deliveries; it resists any split that cuts Arizona deeper while senior California stays whole.',
+   wouldtrade:'Buys aggressively in shortage years; banks in wet years; supports deals consistent with the DCP tier structure.'},
+  {id:'nv',name:'Nevada',color:'#059669',alloc:0.3,shortShare:0.036,tribalLoc:0.013,strategy:'Cut back from 0.3 maf/yr; buy water; bank savings for future years.',
+   mandate:'Mandate: 0.3 MAF allocation; acute scarcity and national conservation leadership; Las Vegas-area dependency.',
+   hardline:'Nevada never consumes 100% of its available water: it banks every year and presses the others toward conservation and demand management.',
+   wouldtrade:'Leases banked savings at strong prices; buys small volumes cheaply in wet years.'},
+  {id:'mx',name:'Mexico',color:'#dc2626',alloc:1.5,shortShare:0.167,tribalLoc:0,strategy:'Cut back from 1.5 maf/yr; conserve beyond mandatory targets; may lease water to fund non-water projects.',
+   mandate:'Mandate: 1944 Mexican Water Treaty guarantees 1.5 MAF annual delivery, with negotiated shortage sharing (Minute 323); represented through the IBWC.',
+   hardline:'Mexico does not sell water in years when its delivery is already below 1.4 MAF - it treats that zone as a potential treaty violation (1.4 threshold is the appendix protocol value; UNVERIFIED against IBWC Minute 323 text).',
+   wouldtrade:'Leases water in adequate years to fund non-water projects; favors binational desal and conservation projects.'},
+  {id:'tr',name:'Tribal Nations of the Lower Basin',color:'#7c3aed',alloc:0.95,strategy:'Manage 0.95 maf of settled rights independently; about 0.47 currently used; lease settled, undeveloped water to acquire capital; save for future use (Ten Tribes Partnership 2018, via Guide).',
+   mandate:'Mandate: Winters v. United States (1908) reserved rights with priority dates pre-dating state appropriations; quantified settlements plus unquantified claims; sovereign governments. An AI cannot capture tribal cultural values or community decision-making - play documented positions only (Appendix A section (g)(iv)).',
+   hardline:'Tribal Nations lease only settled, undeveloped water (Guide: about 0.47 of 0.95 MAF currently used): the developed core of reserved rights is never for sale at any price.',
+   wouldtrade:'Leases undeveloped settled water to acquire capital for infrastructure; open to long-term leasing partnerships.'}
 ];
 const USERS=['ca','az','nv','mx','tr'];
 
@@ -330,6 +350,20 @@ function settle(st,setup,decisions){
   const massCheck=setup.storage+setup.inflow-setup.evap-Object.values(decisions).reduce((s,d)=>s+(d.withdraw||0),0);
   return {end, net, comp, eoyStorage, eoyElev:storageToElev(eoyStorage), massErr:Math.abs(eoyStorage-massCheck)};
 }
+// hard-line check (Stone Halpern Appendix A, author's April 2026 protocol): flags moves that cross a player's stated hard line. Flags never block.
+function hardLineCheck(setup,decisions){
+  const flags={};
+  const S=setup.shortage;
+  const net={};for(const a of ACCOUNTS){net[a.id]=((decisions[a.id]||{}).trades||[]).reduce((s,t)=>s+(t.maf||0),0);}
+  if(S>1e-9&&net.ca<-1e-9)flags.ca='California sells water in a shortage year - crosses its hard line (senior-priority position; cuts fall on junior MWD first) [Appendix A (b)(i)].';
+  if(S>1e-9&&net.az<-1e-9)flags.az='Arizona sells water in a shortage year - crosses its hard line (junior CAP priority, first-tier exposure, protects municipal deliveries) [Appendix A (b)(i)].';
+  const nvAvail=setup.accounts.nv.avail+net.nv, nvW=(decisions.nv||{}).withdraw||0;
+  if(nvW>0&&nvAvail>0&&Math.abs(nvW-nvAvail)<5e-4)flags.nv='Nevada withdrew 100% of its available water - crosses its hard line (conservation leadership: banks every year, never fully consumes) [Appendix A (b)(i)].';
+  const mxIn=setup.accounts.mx.inflowShare;
+  if(net.mx<-1e-9&&mxIn<1.4)flags.mx='Mexico sells water while its inflow share ('+mxIn.toFixed(2)+' MAF) is below the 1.4 MAF treaty-flag threshold - crosses its hard line (threshold is the appendix protocol value, UNVERIFIED against IBWC Minute 323 text) [Appendix A (f)(v)].';
+  if(net.tr<-0.48-1e-9)flags.tr='Tribal Nations lease beyond the undeveloped ~0.48 MAF of their 0.95 MAF settled rights - crosses their hard line (developed core of reserved rights never for sale) [Model Guide ~0.47 used; Appendix A (g)].';
+  return flags;
+}
 const CAP_MAX=CAPMAF[CAPMAF.length-1]; // 27.62 maf at 1,229 ft - top of the official table
 function overCapacity(st){return st>CAP_MAX+1e-9;}
 // ===PURE-END===
@@ -392,7 +426,7 @@ function buildDecTable(){
   let h='<tr><th>Account</th><th>Trades (one year)</th><th>Withdraw (maf)</th><th>Reason (one line)</th></tr>';
   for(const a of ACCOUNTS){
     if(a.id==='rec'){h+='<tr><td>'+chip(a)+'</td><td class="strategy">Maintains protection volume (no trades/withdrawals in this adaptation)</td><td>—</td><td>—</td></tr>';continue;}
-    h+='<tr><td>'+chip(a)+'<div class="strategy">'+a.strategy+'</div></td>'
+    h+='<tr><td>'+chip(a)+'<div class="strategy">'+a.strategy+'</div>'+(a.hardline?'<div class="strategy"><b>Hard line:</b> '+a.hardline+'</div>':'')+'</td>'
       +'<td><div id="trades_'+a.id+'"></div><button class="ghost small" onclick="addTradeRow(\''+a.id+'\')">+ trade</button></td>'
       +'<td><input type="number" id="wd_'+a.id+'" min="0" step="0.05" value="0" style="width:90px"></td>'
       +'<td><input type="text" id="rsn_'+a.id+'" maxlength="200" placeholder="why this move" style="width:170px"></td></tr>';
@@ -425,8 +459,10 @@ function readManual(){
   return dec;
 }
 
-function showResult(res,decisions,mode){
+function showResult(res,decisions,mode,flags){
   let h='<h3 style="margin-top:18px">Year '+session.year+' settled ('+mode+')</h3>';
+  const flagIds=flags?Object.keys(flags):[];
+  if(flagIds.length){h+='<div class="warnbox"><b>Hard-line flags (flagged, not blocked - Appendix A protocol):</b><ul class="tight"><li>'+flagIds.map(id=>ACCOUNTS.find(a=>a.id===id).name+': '+flags[id]).join('</li><li>')+'</li></ul></div>';}
   const hasTrades=Object.values(res.net).some(v=>Math.abs(v)>1e-9);
   if(hasTrades){
     h+='<div style="overflow-x:auto"><table><tr><th>Trade</th><th>Volume (maf)</th><th>Price ($/af)</th><th>Compensation</th></tr>';
@@ -453,11 +489,11 @@ function tradeVwap(d){
   let pv=0,tv=0;for(const t of d.trades){const v=Math.abs(t.maf);pv+=v*t.price_per_af;tv+=v;}
   return tv>0?pv/tv:null;
 }
-function applyAndRender(res,decisions,mode,msgDiv){
+function applyAndRender(res,decisions,mode,msgDiv,flags){
   session.year+=1;
   for(const a of ACCOUNTS)session.bal[a.id]=res.end[a.id];
-  session.hist.push({year:session.year,inflow:setup.inflow,storage:res.eoyStorage,elev:res.eoyElev,mode:mode,withdraw:Object.fromEntries(ACCOUNTS.map(a=>[a.id,(decisions[a.id]||{}).withdraw||0])),end:Object.assign({},res.end),detail:Object.fromEntries(ACCOUNTS.map(a=>[a.id,{net:res.net[a.id],vwap:tradeVwap(decisions[a.id]),reason:(decisions[a.id]||{}).reason||(decisions[a.id]||{}).rationale||''}]))});
-  showResult(res,decisions,mode);
+  session.hist.push({year:session.year,inflow:setup.inflow,storage:res.eoyStorage,elev:res.eoyElev,mode:mode,withdraw:Object.fromEntries(ACCOUNTS.map(a=>[a.id,(decisions[a.id]||{}).withdraw||0])),end:Object.assign({},res.end),detail:Object.fromEntries(ACCOUNTS.map(a=>[a.id,{net:res.net[a.id],vwap:tradeVwap(decisions[a.id]),reason:(decisions[a.id]||{}).reason||(decisions[a.id]||{}).rationale||'',flag:(flags&&flags[a.id])||''}]))});
+  showResult(res,decisions,mode,flags);
   renderKpis();renderHist();
   $('yrNum').textContent=session.year+1;
   $('decide').classList.add('hidden');$('yearSetup').innerHTML='<p class="note">Year '+session.year+' complete. Choose the next year\'s inflow and press "Compute year setup".</p>';
@@ -469,7 +505,7 @@ $('settleBtn').onclick=()=>{
   const res=settle(session,setup,dec);
   if(res.errors){$('manMsg').innerHTML='<div class="badbox"><b>Not settled:</b><ul class="tight"><li>'+res.errors.join('</li><li>')+'</li></ul></div>';return;}
   $('manMsg').innerHTML='';
-  applyAndRender(res,dec,'manual play');
+  applyAndRender(res,dec,'manual play',null,hardLineCheck(setup,dec));
 };
 
 // tabs
@@ -487,7 +523,7 @@ function buildDashboard(){
   let h='';
   for(const a of ACCOUNTS){
     const s=setup.accounts[a.id];
-    h+='<div class="dashpanel"><h3 style="margin-top:0">'+chip(a)+'</h3><table>';
+    h+='<div class="dashpanel"><h3 style="margin-top:0">'+chip(a)+'</h3>'+(a.hardline?'<div class="strategy" style="margin:0 0 6px"><b>Hard line:</b> '+a.hardline+' <b>Would trade:</b> '+a.wouldtrade+'</div>':'')+'<table>';
     h+='<tr><td>Starting Available Water [maf]</td><td class="calc" id="ds_'+a.id+'">'+fmt(s.avail)+'</td></tr>';
     if(a.id==='rec'){
       h+='<tr><td colspan="2" class="strategy" style="text-align:left">Held fixed in this adaptation — the protection volume does not trade and cannot be withdrawn.</td></tr>';
@@ -520,7 +556,8 @@ function dashVals(){
 function recalcDash(){
   if(!setup)return;
   const {v,p,w,net}=dashVals();
-  const netTxt=(net>=0?'+':'')+fmt(net)+(Math.abs(net)<1e-9?' ✓':'');
+  const n=Math.abs(net)<1e-9?0:net;
+  const netTxt=(n>=0?'+':'')+fmt(n)+(Math.abs(net)<1e-9?' ✓':'');
   for(const a of ACCOUNTS){
     const s=setup.accounts[a.id];
     if(a.id==='rec'){$('dn_'+a.id).textContent=netTxt;$('da_'+a.id).textContent=fmt(s.avail);$('de_'+a.id).textContent=fmt(s.avail);continue;}
@@ -561,7 +598,7 @@ $('dashSettleBtn').onclick=()=>{
   const res=settle(session,setup,r.dec);
   if(res.errors){$('dashMsg').innerHTML='<div class="badbox"><b>Not settled:</b><ul class="tight"><li>'+res.errors.join('</li><li>')+'</li></ul></div>';return;}
   $('dashMsg').innerHTML='';
-  applyAndRender(res,r.dec,'participant dashboard');
+  applyAndRender(res,r.dec,'participant dashboard',null,hardLineCheck(setup,r.dec));
 };
 
 $('genPromptBtn').onclick=()=>{
@@ -571,7 +608,25 @@ $('genPromptBtn').onclick=()=>{
   lines.push('');
   lines.push('YEAR '+(session.year+1)+' STATE (all volumes in maf):');
   lines.push('Lake Mead storage '+fmt(setup.storage,2)+' maf ('+fmt(setup.elev,1)+' ft); protection elevation '+session.protElev+' ft; inflow this year '+setup.inflow+' maf; lake evaporation '+fmt(setup.evap,3)+' maf.');
-  for(const a of ACCOUNTS){const s=setup.accounts[a.id];lines.push('- '+a.name+': balance '+fmt(s.startBal)+', evaporation share -'+fmt(s.evapShare)+', inflow share +'+fmt(s.inflowShare)+', available before decisions '+fmt(s.avail)+'. Strategy: '+a.strategy);}
+  for(const a of ACCOUNTS){const s=setup.accounts[a.id];lines.push('- '+a.name+': balance '+fmt(s.startBal)+', evaporation share -'+fmt(s.evapShare)+', inflow share +'+fmt(s.inflowShare)+', available before decisions '+fmt(s.avail)+'.');
+    if(a.id==='rec'){lines.push('  '+a.strategy);}
+    else{lines.push('  '+a.mandate);lines.push('  HARD LINE: '+a.hardline);lines.push('  WOULD TRADE: '+a.wouldtrade);}}
+  lines.push('');
+  lines.push('ROLE CONDUCT (from Stone Halpern\'s Appendix A - author\'s April 2026 scenario protocol, Rules 4-6): advocate your documented position in good faith; do not fabricate facts, precedents, or other parties\' positions; do not concede beyond your mandate. In each rationale, distinguish established facts from projections and from strategic claims (Rule 4(g)). Your stated rationale is logged per year for post-simulation review (Rule 4(f)). If your move crosses your HARD LINE, say so explicitly in your rationale and justify it - the page flags hard-line crossings but does not block them. Figures in these briefs are re-verified or marked UNVERIFIED (see the page\'s Methods).');
+  if(session.hist.length){
+    lines.push('');
+    lines.push('SESSION HISTORY (most recent first, up to 6 years). React to this trajectory and to the other players\' past moves: positions should harden or shift as the lake and the politics evolve. Repeating last year\'s move without a stated reason is weak play.');
+    const recent=session.hist.slice(-6).reverse();
+    for(const r of recent){
+      lines.push('Year '+r.year+': inflow '+r.inflow+' maf; Mead ended at '+r.storage.toFixed(2)+' maf.');
+      for(const a of ACCOUNTS){if(a.id==='rec')continue;const d=r.detail[a.id];if(!d)continue;
+        let s='  '+a.name+': withdrew '+r.withdraw[a.id].toFixed(2);
+        if(Math.abs(d.net)>1e-9)s+=', net trade '+(d.net>0?'+':'')+d.net.toFixed(2)+' maf'+(d.vwap!==null?' at $'+Math.round(d.vwap)+'/af':'');
+        if(d.reason)s+='; said "'+d.reason+'"';
+        if(d.flag)s+='; CROSSED HARD LINE ("'+d.flag+'")';
+        s+='.';lines.push(s);}
+    }
+  }
   lines.push('');
   lines.push('RULES: (1) Each account except Reclamation chooses trades and a withdrawal. (2) Trades are one-year: buy = +maf, sell = -maf, each with an agreed price in $/acre-foot; total compensation = maf x price; reference price points: about $400/af (500-Plus Plan) to $500/af (guide example). (3) Trade volumes across ALL accounts must net to exactly zero — every buy needs a matching sell at the same price. (4) Each account\'s withdrawal must not exceed its available water plus its net trades. (5) Accounts may leave water unwithdrawn to bank it for future years.');
   lines.push('');
@@ -612,7 +667,7 @@ $('applyAiBtn').onclick=()=>{
   const res=settle(session,setup,dec);
   if(res.errors){$('aiMsg').innerHTML='<div class="badbox"><b>Rejected — fix and repaste:</b><ul class="tight"><li>'+res.errors.join('</li><li>')+'</li></ul></div>';return;}
   $('aiMsg').innerHTML='';
-  applyAndRender(res,dec,'AI role-play via copy/paste bridge');
+  applyAndRender(res,dec,'AI role-play via copy/paste bridge',null,hardLineCheck(setup,dec));
   resetAiBridge();
 };
 
@@ -669,7 +724,7 @@ function renderReasons(){
         +'<td>'+chip(a)+'</td><td>'+fmt(r.withdraw[a.id],2)+'</td><td>'+delta+'</td>'
         +'<td>'+(Math.abs(d.net)>1e-9?((d.net>=0?'+':'')+fmt(d.net)):'—')+'</td>'
         +'<td>'+(d.vwap===null?'—':Math.round(d.vwap).toLocaleString('en-US'))+'</td>'
-        +'<td style="text-align:left">'+(d.reason?'<span class="pill" style="background:#f1f5f9;color:#475569">'+modeShort(r.mode)+'</span> ':'')+escapeTxt(d.reason||'—')+'</td></tr>';
+        +'<td style="text-align:left">'+(d.reason?'<span class="pill" style="background:#f1f5f9;color:#475569">'+modeShort(r.mode)+'</span> ':'')+escapeTxt(d.reason||'—')+(d.flag?'<br><span class="pill bad">hard line</span> <span style="color:var(--bad);font-size:12px">'+escapeTxt(d.flag)+'</span>':'')+'</td></tr>';
       first=false;
     }
   }
@@ -688,6 +743,19 @@ $('undoBtn').onclick=()=>{
   renderKpis();renderHist();$('yearResult').innerHTML='';$('yearSetup').innerHTML='';$('decide').classList.add('hidden');
 };
 $('resetBtn').onclick=()=>{session=null;setup=null;$('play').classList.add('hidden');$('history').classList.add('hidden');$('setupOut').innerHTML='';};
+
+$('logBtn').onclick=()=>{
+  if(!session)return;
+  const log={artifact:'Lake Mead Water Bank - AI Stakeholder Session (adaptation of Rosenberg and Myers, Divide Reservoir Inflow)',
+    log_type:'Negotiation log (Appendix A Rule 4(f)); reasons are player-stated, or AI self-reported rationale for bridge years',
+    protection_elevation_ft:session.protElev,
+    years:session.hist.map(r=>({year:r.year,inflow_maf:r.inflow,mead_end_maf:r.storage,mead_end_elev_ft:r.elev,mode:r.mode,
+      accounts:Object.fromEntries(ACCOUNTS.map(a=>[a.id,{withdraw_maf:r.withdraw[a.id],end_balance_maf:r.end[a.id],net_trade_maf:r.detail[a.id].net,vwap_usd_per_af:r.detail[a.id].vwap,stated_reason:r.detail[a.id].reason,hard_line_flag:r.detail[a.id].flag||null}]))}))};
+  const txt=JSON.stringify(log,null,2);
+  const done=()=>{$('logBtn').textContent='Copied';setTimeout(()=>{$('logBtn').textContent='Copy session log (JSON)';},1500);};
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(done);}
+  else{const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();done();}
+};
 </script>
 </body>
 </html>
