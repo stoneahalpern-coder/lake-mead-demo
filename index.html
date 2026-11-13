@@ -77,6 +77,7 @@
     <span class="badge">Built with AI assistance</span>
     <span class="badge">Adaptation — documented simplifications, see Methods</span>
     <span class="badge">Single file · no install · accounting runs offline</span>
+    <span class="badge">Now includes the Mulholland 13-agent simulator code</span>
   </div>
 </header>
 
@@ -181,8 +182,3452 @@
   <p class="note" id="logNote">The session log follows the author's own Rule 4(f) negotiation-log design: per year, every account's withdrawal, trades, settled prices, stated reasons, and hard-line flags - ready to paste into the project brief or AI collaboration log.</p>
 </section>
 
+
+<section id="mulholland">
+  <style>
+    #mulholland table{margin:8px 0}
+    #mulholland th{text-align:left;font-size:12.5px;color:var(--muted);border-bottom:1px solid var(--line);padding:4px 8px 4px 0}
+    #mulholland td{border-bottom:1px solid var(--line);padding:4px 8px 4px 0;vertical-align:top;font-size:13px;text-align:left}
+    #mulholland .mh-num{white-space:nowrap}
+    #mulholland details.mh-code{border:1px solid var(--line);border-radius:10px;padding:6px 12px;margin:6px 0;background:#fbfdff}
+    #mulholland details.mh-code summary{cursor:pointer;font-size:13.5px}
+    #mulholland pre.mh-pre{overflow-x:auto;background:#0f172a;color:#e2e8f0;border-radius:8px;padding:12px 14px;font-size:11.5px;line-height:1.45;max-height:520px;overflow-y:auto}
+    #mulholland ol.mh-steps{margin:6px 0 6px 20px;padding:0;font-size:13.5px}
+    #mulholland ol.mh-steps li{margin:4px 0}
+  </style>
+  <h2>The Mulholland negotiation simulator</h2>
+  <p class="sub">The code behind this project, as delivered by the Mulholland team (USC Marshall), November 2026.</p>
+  <p>Thirteen AI agents play the parties in the Colorado River water dispute and negotiate allocations over several rounds. A plain Python rule engine checks every proposal against the legal limits and clamps any number that breaks them, so the AI cannot argue its way past water law. After many runs, a statistics module shows where agreement tends to land and who refuses to move.</p>
+
+  <h3>The 13 agents and the most water each may claim</h3>
+  <p class="sub">Million acre-feet per year. The two zero-claim parties act through rules and operations, not water claims.</p>
+  <div style="overflow-x:auto"><table>
+    <tr><th>Agent</th><th>Ceiling (MAF/yr)</th></tr>
+    <tr><td><b>California</b></td><td class="mh-num">4.4</td></tr>
+<tr><td><b>Arizona</b></td><td class="mh-num">2.8</td></tr>
+<tr><td><b>Nevada</b></td><td class="mh-num">0.3</td></tr>
+<tr><td><b>Colorado</b></td><td class="mh-num">3.88</td></tr>
+<tr><td><b>Utah</b></td><td class="mh-num">1.73</td></tr>
+<tr><td><b>Wyoming</b></td><td class="mh-num">1.05</td></tr>
+<tr><td><b>New Mexico</b></td><td class="mh-num">0.84</td></tr>
+<tr><td><b>Federal government (Reclamation)</b></td><td class="mh-num">0, runs the river</td></tr>
+<tr><td><b>Navajo Nation</b></td><td class="mh-num">2.0 (not yet settled in court)</td></tr>
+<tr><td><b>Colorado River Indian Tribes</b></td><td class="mh-num">0.72</td></tr>
+<tr><td><b>Mexico</b></td><td class="mh-num">1.5 by treaty</td></tr>
+<tr><td><b>Imperial Irrigation District</b></td><td class="mh-num">3.1</td></tr>
+<tr><td><b>Environmental coalition</b></td><td class="mh-num">0, speaks for flows</td></tr>
+  </table></div>
+
+  <h3>How a run works</h3>
+  <ol class="mh-steps">
+    <li>Each round, every agent proposes an allocation, a conservation commitment, and a shortage stance in a fixed JSON format.</li>
+    <li>The rule engine accepts or clamps each proposal, then the engine totals the seven states' claims against the 13.0 MAF of available water and feeds the gap into the next round.</li>
+    <li>Across many runs, the analyzer reports the agreement range for each party, stable coalitions, and whether the totals ever fit the water that exists.</li>
+  </ol>
+
+  <h3>The code</h3>
+  <p class="sub">Every file in the package, in full. Click a file to open it.</p>
+  <details class="mh-code"><summary><b>run_scenario.py</b></summary><pre class="mh-pre"><code>&quot;&quot;&quot;
+run_scenario.py — Mulholland Multiagent System
+===============================================
+SCENARIO RUNNER — End-user entry point
+
+This is what a non-technical client interacts with indirectly.
+Instead of editing Python files, they fill out a JSON scenario
+config file and pass it here.
+
+Usage:
+  # Validate the scenario only (free, no API calls):
+  python run_scenario.py --config scenarios/colorado_river_2026.json --dry_run
+
+  # Run locally against the OpenAI API (needs OPENAI_API_KEY in .env):
+  python run_scenario.py --config scenarios/colorado_river_2026.json
+
+  # Write a SLURM job-array script scaffold for USC CARC:
+  python run_scenario.py --config scenarios/colorado_river_2026.json --carc
+
+What it does:
+  1. Reads the scenario config file
+  2. Validates all inputs (agents exist, supply makes sense, etc.)
+  3. Applies any mandate overrides from the config
+  4. Runs simulations (locally or generates CARC submission script)
+  5. Runs ZOPA analysis
+  6. Saves the final report
+&quot;&quot;&quot;
+
+import argparse
+import json
+import os
+import sys
+from datetime import datetime
+from pathlib  import Path
+
+# Add project root to path
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from agents        import ALL_MANDATES, NegotiationAgent
+from negotiation   import run_simulation, AGENT_ORDER
+from zopa_analyzer import analyze_zopa
+from config        import OPENAI_API_KEY, OUTPUT_DIR, MODEL
+from legal_framework import ALL_AGENT_CEILINGS_MAF
+
+
+# ── Validation ────────────────────────────────────────────────────────────────
+
+def validate_scenario(config: dict) -&gt; list[str]:
+    &quot;&quot;&quot;
+    Validates the scenario config before running anything.
+    Returns a list of error strings — empty list means all good.
+    &quot;&quot;&quot;
+    errors = []
+
+    # Check required top-level keys
+    for key in [&quot;scenario&quot;, &quot;supply_conditions&quot;, &quot;simulation_parameters&quot;, &quot;active_agents&quot;]:
+        if key not in config:
+            errors.append(f&quot;Missing required field: &#x27;{key}&#x27;&quot;)
+
+    if errors:
+        return errors   # Return early — can&#x27;t validate further
+
+    # Check all active agents exist
+    for agent in config.get(&quot;active_agents&quot;, []):
+        if agent not in ALL_MANDATES:
+            errors.append(
+                f&quot;Unknown agent: &#x27;{agent}&#x27;. &quot;
+                f&quot;Valid agents: {list(ALL_MANDATES.keys())}&quot;
+            )
+
+    # Check supply makes sense
+    supply = config[&quot;supply_conditions&quot;].get(&quot;available_supply_maf&quot;, 0)
+    if not (5.0 &lt;= supply &lt;= 20.0):
+        errors.append(
+            f&quot;available_supply_maf={supply} is outside realistic range (5–20 MAF).&quot;
+        )
+
+    # Check simulation parameters
+    params = config[&quot;simulation_parameters&quot;]
+    n_sims   = params.get(&quot;num_simulations&quot;, 0)
+    n_rounds = params.get(&quot;num_rounds&quot;, 0)
+    if not (1 &lt;= n_sims &lt;= 1000):
+        errors.append(f&quot;num_simulations={n_sims} must be between 1 and 1000.&quot;)
+    if not (1 &lt;= n_rounds &lt;= 10):
+        errors.append(f&quot;num_rounds={n_rounds} must be between 1 and 10.&quot;)
+
+    # Check mandate overrides reference valid agents and valid fields
+    for agent, overrides in config.get(&quot;mandate_overrides&quot;, {}).items():
+        if agent.startswith(&quot;_comment&quot;):
+            continue
+        if agent not in ALL_MANDATES:
+            errors.append(f&quot;mandate_overrides references unknown agent: &#x27;{agent}&#x27;&quot;)
+            continue
+        valid_fields = {&quot;position&quot;, &quot;negotiation_style&quot;, &quot;red_lines&quot;, &quot;authority&quot;,
+                        &quot;priority&quot;, &quot;dependencies&quot;}
+        for field in overrides:
+            if field not in valid_fields:
+                errors.append(
+                    f&quot;mandate_overrides[&#x27;{agent}&#x27;] has unknown field &#x27;{field}&#x27;. &quot;
+                    f&quot;Valid: {valid_fields}&quot;
+                )
+
+    return errors
+
+
+# ── Mandate override application ──────────────────────────────────────────────
+
+def apply_mandate_overrides(config: dict):
+    &quot;&quot;&quot;
+    Applies mandate_overrides from the config to ALL_MANDATES in-place.
+    Called before any agents are instantiated.
+
+    This is how the client customises agent behaviour without
+    editing agents.py directly.
+    &quot;&quot;&quot;
+    overrides = config.get(&quot;mandate_overrides&quot;, {})
+    applied   = []
+
+    for agent, fields in overrides.items():
+        if agent.startswith(&quot;_comment&quot;):
+            continue
+        if agent not in ALL_MANDATES:
+            continue
+
+        for field, value in fields.items():
+            ALL_MANDATES[agent][field] = value
+            applied.append(f&quot;{agent}.{field}&quot;)
+
+    if applied:
+        print(f&quot;  Mandate overrides applied: {&#x27;, &#x27;.join(applied)}&quot;)
+
+
+# ── Main runner ───────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(
+        description=&quot;Run a Mulholland governance negotiation simulation from a scenario config file.&quot;
+    )
+    parser.add_argument(
+        &quot;--config&quot;,
+        type=str,
+        required=True,
+        help=&quot;Path to scenario JSON config file (e.g. scenarios/colorado_river_2026.json)&quot;,
+    )
+    parser.add_argument(
+        &quot;--carc&quot;,
+        action=&quot;store_true&quot;,
+        help=&quot;Generate CARC SLURM submission instead of running locally.&quot;,
+    )
+    parser.add_argument(
+        &quot;--dry_run&quot;,
+        action=&quot;store_true&quot;,
+        help=&quot;Validate config and print summary — do not run any simulations.&quot;,
+    )
+    args = parser.parse_args()
+
+    # ── Load config ───────────────────────────────────────────────────────────
+    config_path = Path(args.config)
+    if not config_path.exists():
+        print(f&quot;ERROR: Config file not found: {config_path}&quot;)
+        sys.exit(1)
+
+    with open(config_path) as f:
+        config = json.load(f)
+
+    scenario_name = config[&quot;scenario&quot;][&quot;name&quot;]
+
+    print(&quot;╔════════════════════════════════════════════════════════════╗&quot;)
+    print(&quot;║   MULHOLLAND MULTIAGENT SYSTEM — SCENARIO RUNNER          ║&quot;)
+    print(&quot;╚════════════════════════════════════════════════════════════╝&quot;)
+    print(f&quot;\n  Scenario : {scenario_name}&quot;)
+    print(f&quot;  Config   : {config_path}&quot;)
+
+    # ── Validate ──────────────────────────────────────────────────────────────
+    print(&quot;\n  Validating scenario configuration...&quot;)
+    errors = validate_scenario(config)
+
+    if errors:
+        print(f&quot;\n  ✗ Validation FAILED — {len(errors)} error(s):&quot;)
+        for e in errors:
+            print(f&quot;    • {e}&quot;)
+        sys.exit(1)
+
+    print(f&quot;  ✓ Validation passed&quot;)
+
+    # ── Print scenario summary ────────────────────────────────────────────────
+    params        = config[&quot;simulation_parameters&quot;]
+    supply        = config[&quot;supply_conditions&quot;]
+    active_agents = config[&quot;active_agents&quot;]
+    n_sims        = params[&quot;num_simulations&quot;]
+    n_rounds      = params[&quot;num_rounds&quot;]
+    total_calls   = n_sims * n_rounds * len(active_agents)
+
+    print(f&quot;\n  Active agents      : {len(active_agents)}&quot;)
+    for a in active_agents:
+        atype = ALL_MANDATES[a][&quot;agent_type&quot;]
+        print(f&quot;    [{atype:&lt;13}] {a}&quot;)
+
+    print(f&quot;\n  Supply             : {supply[&#x27;available_supply_maf&#x27;]} MAF &quot;
+          f&quot;({supply.get(&#x27;drought_scenario&#x27;, &#x27;unspecified&#x27;)} drought)&quot;)
+    print(f&quot;  Simulations        : {n_sims}&quot;)
+    print(f&quot;  Rounds per sim     : {n_rounds}&quot;)
+    print(f&quot;  Total GPT calls    : {total_calls}&quot;)
+    print(f&quot;  Est. cost (mini)   : ~${total_calls * 0.0004:.2f}&quot;)
+    print(f&quot;  Est. cost (gpt-4o) : ~${total_calls * 0.02:.2f}&quot;)
+
+    if args.dry_run:
+        print(&quot;\n  [DRY RUN] Stopping here — no simulations executed.&quot;)
+        sys.exit(0)
+
+    if args.carc:
+        _generate_carc_submission(config, config_path, n_sims)
+        sys.exit(0)
+
+    # ── Pre-flight checks ─────────────────────────────────────────────────────
+    if not OPENAI_API_KEY:
+        print(&quot;\nERROR: OPENAI_API_KEY not set.&quot;)
+        sys.exit(1)
+
+    # ── Apply mandate overrides ───────────────────────────────────────────────
+    print(&quot;\n  Applying mandate overrides...&quot;)
+    apply_mandate_overrides(config)
+
+    # ── Apply the scenario&#x27;s run settings to the engine ───────────────────────
+    # negotiation.py / zopa_analyzer.py / agents.py read these as module-level
+    # values imported from config.py and legal_framework.py, so the scenario
+    # file&#x27;s values are written onto those modules before anything runs.
+    import agents
+    import negotiation
+    import zopa_analyzer
+    negotiation.AGENT_ORDER        = active_agents
+    negotiation.NUM_ROUNDS_PER_SIM = n_rounds
+    negotiation.AVAILABLE_SUPPLY_MAF  = supply[&quot;available_supply_maf&quot;]
+    zopa_analyzer.AVAILABLE_SUPPLY_MAF = supply[&quot;available_supply_maf&quot;]
+    agents.set_active_client(None, params.get(&quot;model&quot;, MODEL))  # None = OpenAI client
+
+    # ── Run simulations ───────────────────────────────────────────────────────
+    print(f&quot;\n  Starting {n_sims} simulations × {n_rounds} rounds × &quot;
+          f&quot;{len(active_agents)} agents...\n&quot;)
+
+    all_results = []
+    for sim_id in range(1, n_sims + 1):
+        result = run_simulation(simulation_id=sim_id)
+        all_results.append(result)
+
+    # ── ZOPA analysis ─────────────────────────────────────────────────────────
+    print(&quot;\n\nRunning ZOPA analysis...&quot;)
+    zopa_analysis = analyze_zopa(all_results)
+    print(zopa_analysis[&quot;zopa_summary&quot;])
+
+    # ── Save output ───────────────────────────────────────────────────────────
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    timestamp   = datetime.now().strftime(&quot;%Y%m%d_%H%M%S&quot;)
+    output_name = f&quot;{config[&#x27;scenario&#x27;][&#x27;name&#x27;].replace(&#x27; &#x27;, &#x27;_&#x27;)[:40]}_{timestamp}.json&quot;
+    output_path = os.path.join(OUTPUT_DIR, output_name)
+
+    payload = {
+        &quot;scenario_config&quot;: config,
+        &quot;run_metadata&quot;: {
+            &quot;timestamp&quot;:       datetime.now().isoformat(),
+            &quot;num_simulations&quot;: n_sims,
+            &quot;num_rounds&quot;:      n_rounds,
+            &quot;model&quot;:           params.get(&quot;model&quot;, MODEL),
+            &quot;scenario&quot;:        scenario_name,
+            &quot;available_supply_maf&quot;: supply[&quot;available_supply_maf&quot;],
+            &quot;active_agents&quot;:   active_agents,
+            &quot;system&quot;:          &quot;Mulholland Multiagent System v0.1&quot;,
+        },
+        &quot;simulations&quot;:   all_results,
+        &quot;zopa_analysis&quot;: zopa_analysis,
+    }
+
+    with open(output_path, &quot;w&quot;) as f:
+        json.dump(payload, f, indent=2)
+
+    print(f&quot;\n  ✓ Results saved → {output_path}&quot;)
+
+    # Same Word memo that main.py produces
+    from docx_report import generate_docx
+    docx_path = output_path[:-len(&quot;.json&quot;)] + &quot;.docx&quot;
+    generate_docx(payload, docx_path)
+    print(f&quot;  ✓ Word report saved → {docx_path}&quot;)
+
+
+def _generate_carc_submission(config: dict, config_path: Path, n_sims: int):
+    &quot;&quot;&quot;
+    Generates a CARC-ready SLURM script customised for this scenario.
+    &quot;&quot;&quot;
+    script_name = f&quot;submit_{config[&#x27;scenario&#x27;][&#x27;name&#x27;].replace(&#x27; &#x27;, &#x27;_&#x27;)[:30]}.sh&quot;
+    script_path = Path(&quot;carc&quot;) / script_name
+    script_path.parent.mkdir(exist_ok=True)
+
+    script = f&quot;&quot;&quot;#!/bin/bash
+#SBATCH --job-name=mulholland_{config[&#x27;scenario&#x27;][&#x27;domain&#x27;]}
+#SBATCH --account=&lt;YOUR_ACCOUNT&gt;
+#SBATCH --partition=main
+#SBATCH --array=1-{n_sims}
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=8G
+#SBATCH --time=01:00:00
+#SBATCH --output=/scratch/%u/mulholland/logs/sim_%a.out
+#SBATCH --error=/scratch/%u/mulholland/logs/sim_%a.err
+
+# Auto-generated by run_scenario.py for scenario:
+# {config[&#x27;scenario&#x27;][&#x27;name&#x27;]}
+
+module purge
+module load conda
+conda activate mulholland
+source ${{HOME}}/.mulholland_secrets
+
+STAGGER_SLEEP=$(( RANDOM % 60 ))
+sleep ${{STAGGER_SLEEP}}
+
+cd ${{HOME}}/mulholland
+python carc/run_single_sim.py \\
+    --sim_id &quot;${{SLURM_ARRAY_TASK_ID}}&quot; \\
+    --config &quot;{config_path}&quot; \\
+    --output_dir &quot;/scratch/${{USER}}/mulholland/output&quot;
+&quot;&quot;&quot;
+    with open(script_path, &quot;w&quot;) as f:
+        f.write(script)
+
+    print(f&quot;\n  ✓ CARC submission script generated → {script_path}&quot;)
+    print(f&quot;  Submit with: sbatch {script_path}&quot;)
+    print(f&quot;  After completion: python carc/merge_results.py&quot;)
+
+
+if __name__ == &quot;__main__&quot;:
+    main()</code></pre></details>
+<details class="mh-code"><summary><b>main.py</b></summary><pre class="mh-pre"><code>&quot;&quot;&quot;
+main.py — Mulholland Multiagent System
+========================================
+ENTRY POINT
+
+Runs the full pipeline:
+  0. Start a local vLLM server (Qwen2.5-7B-Instruct) in the background
+  1. Execute NUM_SIMULATIONS negotiation simulations against it
+  2. Analyze ZOPA across all runs
+  3. Print the summary report to console
+  4. Save full results to output/mulholland_results_&lt;timestamp&gt;.json
+  5. Stop the local vLLM server
+
+Usage:
+    python main.py
+
+Requirements:
+    • pip install -r requirements.txt
+    • A GPU is strongly recommended (CARC on-demand GPU allocation, or local
+      CUDA/ROCm hardware) — see config_open_source.py for engine settings.
+      No API key or external account is required; the model runs entirely
+      on this machine (see config_open_source.py for details).
+&quot;&quot;&quot;
+
+import json
+import os
+import sys
+from datetime import datetime
+
+import agents
+from config          import NUM_SIMULATIONS, NUM_ROUNDS_PER_SIM
+from config_open_source import VLLMServerManager, OSS_MODEL_PATH
+from negotiation     import run_simulation
+from zopa_analyzer    import analyze_zopa
+from docx_report      import generate_docx
+from conversation_log import init_conversation_log
+from checkpoint      import (
+    load_checkpoint,
+    save_checkpoint,
+    clear_checkpoint,
+    checkpoint_is_compatible,
+)
+
+
+class _Tee:
+    &quot;&quot;&quot;
+    Mirrors everything written to a stream (stdout/stderr) into a file as well,
+    so the FULL terminal output is saved verbatim. Flushed on every write, so
+    the file lands each round as it prints — no buffering until the end and no
+    change to what&#x27;s shown on screen.
+    &quot;&quot;&quot;
+    def __init__(self, stream, file_handle):
+        self._stream = stream
+        self._file   = file_handle
+
+    def write(self, data):
+        self._stream.write(data)
+        self._file.write(data)
+        self._stream.flush()
+        self._file.flush()
+        return len(data)
+
+    def flush(self):
+        self._stream.flush()
+        self._file.flush()
+
+    def __getattr__(self, name):
+        # Delegate everything else (encoding, isatty, fileno, …) to the stream.
+        return getattr(self._stream, name)
+
+
+def main():
+    print(&quot;╔══════════════════════════════════════════════════════════╗&quot;)
+    print(&quot;║   MULHOLLAND MULTIAGENT SYSTEM                          ║&quot;)
+    print(&quot;║   Colorado River Basin — Water Rights Simulation        ║&quot;)
+    print(f&quot;║   Simulations: {NUM_SIMULATIONS:&lt;3}  |  Neurosymbolic AI approach      ║&quot;)
+    print(&quot;╚══════════════════════════════════════════════════════════╝&quot;)
+    print()
+    print(f&quot;  Model             : {OSS_MODEL_PATH} (local vLLM server)&quot;)
+    print(&quot;  Layer 1 (Neural)  : agents generate proposals&quot;)
+    print(&quot;  Layer 2 (Symbolic): Constraint checker validates proposals&quot;)
+    print(&quot;  Layer 3 (Analysis): ZOPA analyzer finds agreement zones&quot;)
+    print()
+
+    # ── Resume from an interrupted run, if there is one ───────────────────────
+    # A full run is NUM_SIMULATIONS × NUM_ROUNDS_PER_SIM × 13 LLM calls (hours
+    # of compute), so an interruption near the end is expensive to redo. If a
+    # checkpoint from a matching config exists, pick up where it stopped.
+    all_results  = []
+    resume_state = None
+
+    checkpoint = load_checkpoint()
+    if checkpoint:
+        if checkpoint_is_compatible(checkpoint, NUM_SIMULATIONS, NUM_ROUNDS_PER_SIM):
+            all_results  = checkpoint.get(&quot;completed_simulations&quot;, [])
+            resume_state = checkpoint.get(&quot;in_progress&quot;)
+            done = len(all_results)
+            print(f&quot;  ↻ Found checkpoint — {done} of {NUM_SIMULATIONS} simulation(s) &quot;
+                  f&quot;already complete. Resuming.\n&quot;)
+        else:
+            # Config changed since the checkpoint was written. Resuming would
+            # blend results from two different experiment configurations into
+            # one output file, which is worse than redoing the work because the
+            # mismatch would be invisible in the results.
+            print(&quot;  [WARNING] Existing checkpoint was written under a different &quot;
+                  &quot;NUM_SIMULATIONS/NUM_ROUNDS_PER_SIM config — ignoring it and &quot;
+                  &quot;starting fresh.\n&quot;)
+            clear_checkpoint()
+
+    def checkpoint_after_round(sim_id, round_num, simulation_results, agent_states):
+        &quot;&quot;&quot;Called by run_simulation after each round — see checkpoint.py.&quot;&quot;&quot;
+        save_checkpoint({
+            &quot;config&quot;: {
+                &quot;num_simulations&quot;:    NUM_SIMULATIONS,
+                &quot;num_rounds_per_sim&quot;: NUM_ROUNDS_PER_SIM,
+            },
+            &quot;completed_simulations&quot;: all_results,
+            &quot;in_progress&quot;: {
+                &quot;simulation_id&quot;:      sim_id,
+                &quot;next_round&quot;:         round_num + 1,
+                &quot;simulation_results&quot;: simulation_results,
+                &quot;agent_states&quot;:       agent_states,
+            },
+        })
+
+    # ── Open the live conversation transcript (output/all_conversations.txt) ──
+    # Append-only: every run adds a delimited section, and each agent&#x27;s exact
+    # generated output is written as the simulation proceeds (see conversation_log.py).
+    init_conversation_log(metadata={
+        &quot;model&quot;:       OSS_MODEL_PATH,
+        &quot;simulations&quot;: NUM_SIMULATIONS,
+        &quot;rounds_each&quot;: NUM_ROUNDS_PER_SIM,
+    })
+
+    # ── Start the local model server, run every simulation against it, then
+    #    guarantee shutdown — even if a simulation raises ───────────────────
+    with VLLMServerManager() as oss_client:
+        agents.set_active_client(oss_client, model_name=OSS_MODEL_PATH)
+
+        start_sim = len(all_results) + 1
+        for sim_id in range(start_sim, NUM_SIMULATIONS + 1):
+            # resume_state only applies to the one simulation that was mid-flight
+            # when the previous run died; every later simulation starts clean.
+            sim_resume = resume_state if (
+                resume_state and resume_state.get(&quot;simulation_id&quot;) == sim_id
+            ) else None
+            resume_state = None
+
+            result = run_simulation(
+                simulation_id     = sim_id,
+                resume_state      = sim_resume,
+                on_round_complete = checkpoint_after_round,
+            )
+            all_results.append(result)
+
+            # Simulation finished — record it as complete and clear in_progress,
+            # so a crash during the *next* simulation doesn&#x27;t replay this one.
+            save_checkpoint({
+                &quot;config&quot;: {
+                    &quot;num_simulations&quot;:    NUM_SIMULATIONS,
+                    &quot;num_rounds_per_sim&quot;: NUM_ROUNDS_PER_SIM,
+                },
+                &quot;completed_simulations&quot;: all_results,
+                &quot;in_progress&quot;: None,
+            })
+    # ── vLLM server subprocess is already stopped here ────────────────────────
+
+    # ── ZOPA analysis across all simulation runs ──────────────────────────────
+    print(&quot;\n\nRunning ZOPA analysis across all simulations...&quot;)
+    zopa_analysis = analyze_zopa(all_results)
+
+    # Print the text summary to console
+    print(zopa_analysis[&quot;zopa_summary&quot;])
+
+    # ── Save full results to JSON ─────────────────────────────────────────────
+    # The JSON file contains every proposal, every violation, and the full
+    # ZOPA breakdown — useful for deeper analysis or visualisation later.
+    os.makedirs(&quot;output&quot;, exist_ok=True)
+    timestamp   = datetime.now().strftime(&quot;%Y%m%d_%H%M%S&quot;)
+    output_path = f&quot;output/mulholland_results_{timestamp}.json&quot;
+
+    output_payload = {
+        &quot;run_metadata&quot;: {
+            &quot;timestamp&quot;:       datetime.now().isoformat(),
+            &quot;num_simulations&quot;: NUM_SIMULATIONS,
+            &quot;model&quot;:           OSS_MODEL_PATH,
+            &quot;system&quot;:          &quot;Mulholland Multiagent System v0.1&quot;,
+            &quot;scenario&quot;:        &quot;Colorado River Basin — water rights negotiation&quot;,
+        },
+        &quot;simulations&quot;:  all_results,
+        &quot;zopa_analysis&quot;: zopa_analysis,
+    }
+
+    with open(output_path, &quot;w&quot;) as f:
+        json.dump(output_payload, f, indent=2)
+
+    print(f&quot;  ✓ Full results saved → {output_path}&quot;)
+
+    # ── Save the same results as a Word document ──────────────────────────────
+    docx_path = f&quot;output/mulholland_results_{timestamp}.docx&quot;
+    generate_docx(output_payload, docx_path)
+    print(f&quot;  ✓ Word report saved  → {docx_path}&quot;)
+
+    # Everything is written and saved — drop the checkpoint so the next run
+    # starts fresh rather than trying to resume an already-finished run.
+    clear_checkpoint()
+
+    print(&quot;\n  Simulation run complete.&quot;)
+
+
+if __name__ == &quot;__main__&quot;:
+    # Mirror the entire terminal session (stdout + stderr) into Terminal_outputs.txt,
+    # verbatim and flushed per round. Append-only with a run banner so successive
+    # runs accumulate rather than overwrite.
+    _term_log = open(&quot;Terminal_outputs.txt&quot;, &quot;a&quot;, encoding=&quot;utf-8&quot;)
+    _term_log.write(f&quot;\n\n{&#x27;=&#x27;*70}\n  RUN {datetime.now().isoformat()}\n{&#x27;=&#x27;*70}\n&quot;)
+    _orig_out, _orig_err = sys.stdout, sys.stderr
+    sys.stdout = _Tee(_orig_out, _term_log)
+    sys.stderr = _Tee(_orig_err, _term_log)
+    try:
+        main()
+    finally:
+        sys.stdout, sys.stderr = _orig_out, _orig_err
+        _term_log.flush()
+        _term_log.close()
+</code></pre></details>
+<details class="mh-code"><summary><b>config.py</b></summary><pre class="mh-pre"><code>&quot;&quot;&quot;
+config.py — Mulholland Multiagent System
+=========================================
+Central configuration. All tunable parameters live here so you never
+need to hunt through other files to change a setting.
+&quot;&quot;&quot;
+
+import os
+from dotenv import load_dotenv
+
+# Load OPENAI_API_KEY from the .env file in the project root
+load_dotenv()
+
+# ── OpenAI ────────────────────────────────────────────────────────────────────
+OPENAI_API_KEY = os.getenv(&quot;OPENAI_API_KEY&quot;)
+
+# gpt-4o-mini is used here to keep API costs low during development.
+# Swap to &quot;gpt-4o&quot; for higher-quality negotiations when ready.
+MODEL = &quot;gpt-4o-mini&quot;
+
+# Max tokens the LLM can use per agent response.
+# 500 is enough for a well-reasoned JSON proposal without burning tokens.
+MAX_TOKENS_PER_CALL = 500
+
+# ── Simulation ────────────────────────────────────────────────────────────────
+# Total LLM calls per run = NUM_SIMULATIONS × NUM_ROUNDS_PER_SIM × 13 agents.
+# The defaults below (1 × 1 × 13 = 13 calls) are a quick smoke test. For real
+# analysis use several rounds (agents only start conceding from round 2) and
+# 20+ simulations (confidence bands in zopa_analyzer.py need ≥20 runs).
+NUM_SIMULATIONS = 1
+
+# Number of back-and-forth negotiation rounds per simulation.
+# Round 1 = opening positions; round 2+ = responses and adjustments.
+NUM_ROUNDS_PER_SIM = 1
+
+# How many of its own most recent PAST rounds each agent carries into the
+# round it&#x27;s generating. This is a sliding window relative to the current
+# round, not a fixed set of rounds:
+#
+#     generating round  6  -&gt;  sees rounds  3, 4, 5
+#     generating round  7  -&gt;  sees rounds  4, 5, 6
+#     generating round 100 -&gt;  sees rounds 97, 98, 99
+#
+# Why it&#x27;s bounded: each agent&#x27;s history grows ~1.2k tokens per round (every
+# round-2+ user message embeds all 12 other agents&#x27; proposals). Unbounded, it
+# blows past the local vLLM server&#x27;s context window (--max-model-len, 8192)
+# at ~round 6-7 and every later call fails with a 400. With
+# NUM_ROUNDS_PER_SIM=100 a bigger context only moves the wall — the window
+# keeps cost per round constant, so round 100 is as affordable as round 6.
+#
+# This bounds only an agent&#x27;s memory of its OWN older rounds. Every other
+# agent&#x27;s current proposals are rebuilt into each round&#x27;s user message, so
+# agents always see the full live negotiation state regardless of this value.
+#
+# 3 past rounds ≈ 5.3k prompt tokens — inside 8192 with room for the
+# 500-token response. Raise it only alongside MAX_MODEL_LEN in
+# config_open_source.py (which costs GPU memory for KV cache).
+HISTORY_WINDOW_ROUNDS = 3
+
+# ── Output ────────────────────────────────────────────────────────────────────
+# Where result JSON / DOCX / transcripts are written (created automatically).
+OUTPUT_DIR = &quot;output&quot;
+
+# Note: the water supply the agents negotiate against is AVAILABLE_SUPPLY_MAF in
+# legal_framework.py (13.0 MAF by default). run_scenario.py overrides it with
+# the scenario file&#x27;s supply_conditions.available_supply_maf.
+</code></pre></details>
+<details class="mh-code"><summary><b>config_open_source.py</b></summary><pre class="mh-pre"><code>&quot;&quot;&quot;
+config_open_source.py — Mulholland Multiagent System
+=======================================================
+OPEN-SOURCE MODEL CONFIG — Qwen2.5-7B-Instruct via a local vLLM server
+
+Runs entirely on your own machine/CARC node. &quot;OpenAI-compatible&quot; here means
+the local server speaks the same HTTP request/response JSON shape OpenAI&#x27;s
+API uses — not that it talks to OpenAI or any external service. Once the
+model weights are downloaded once, there is no internet dependency at
+inference time at all.
+
+Lifecycle: the vLLM server is a background subprocess owned entirely by
+VLLMServerManager, started and stopped around main.py&#x27;s execution:
+
+    with VLLMServerManager() as oss_client:
+        ... run simulations using oss_client ...
+    # server subprocess is already terminated here, even on error/interrupt
+
+Qwen2.5-7B-Instruct was chosen over Llama-3.1-8B-Instruct specifically
+because it is Apache-2.0 licensed and NOT gated — no Hugging Face account,
+approval step, or access token required, keeping this fully self-contained.
+&quot;&quot;&quot;
+
+import glob
+import os
+import socket
+import subprocess
+import sys
+import sysconfig
+import time
+
+# ── Hugging Face cache location ───────────────────────────────────────────
+# huggingface_hub defaults to caching downloaded model files under
+# ~/.cache/huggingface — which is a HOME directory path. On HPC clusters
+# (e.g. USC CARC) home directories typically have a small disk quota, while
+# scratch/project directories (where this repo itself usually lives) have
+# much more room. Redirect the cache to sit next to this file instead, so it
+# lands wherever the project actually is — no hardcoded username/path, and
+# no manual `export HF_HOME=...` step required. Respects an existing
+# HF_HOME if you&#x27;ve already set one yourself (setdefault, not overwrite).
+# Must happen before huggingface_hub is imported anywhere (including by
+# vLLM&#x27;s own subprocess, which inherits this env var too).
+os.environ.setdefault(
+    &quot;HF_HOME&quot;,
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), &quot;.hf_cache&quot;),
+)
+
+import requests
+from openai import OpenAI
+
+# ── Model ──────────────────────────────────────────────────────────────────
+# Apache-2.0, not gated — downloads anonymously, no HF account/token needed.
+OSS_MODEL_PATH = &quot;Qwen/Qwen2.5-7B-Instruct&quot;
+
+# ── Local server connection ───────────────────────────────────────────────
+# 127.0.0.1 = only reachable from this machine/process — nothing external
+# can reach this port, so no API key / auth is needed on the server itself.
+VLLM_HOST = &quot;127.0.0.1&quot;
+VLLM_PORT = int(os.getenv(&quot;VLLM_PORT&quot;, &quot;8000&quot;))
+VLLM_BASE_URL = f&quot;http://{VLLM_HOST}:{VLLM_PORT}/v1&quot;
+
+# The openai SDK requires *some* non-empty string for api_key — vLLM ignores
+# it entirely since the server is launched without an --api-key flag.
+PLACEHOLDER_KEY = &quot;not-needed&quot;
+
+# ── Same knobs config.py defines for the OpenAI path, mirrored here ─────────
+MAX_TOKENS_PER_CALL = 500
+TEMPERATURE = 0.7
+
+# ── vLLM engine settings (used only at server launch) ────────────────────────
+TENSOR_PARALLEL_SIZE = int(os.getenv(&quot;VLLM_TP_SIZE&quot;, &quot;1&quot;))  # GPUs to shard across
+GPU_MEMORY_UTILIZATION = 0.90
+MAX_MODEL_LEN = 8192
+# Note: on a 16GB V100 (as opposed to a 32GB V100 or an A100), this 7B model
+# in float16 (~14GB of weights) plus KV cache leaves little headroom at
+# gpu_memory_utilization=0.90 — if the server OOMs on load, lower
+# MAX_MODEL_LEN and/or GPU_MEMORY_UTILIZATION, or request TENSOR_PARALLEL_SIZE
+# &gt; 1 to shard across multiple V100s.
+STARTUP_TIMEOUT_SEC = 900  # first run: weights download + CUDA graph capture/kernel warmup
+# CPU-side KV swap space, in GiB. vLLM&#x27;s default is 4, allocated as pinned
+# (unswappable) host RAM at engine init — enough to get the process OOM-killed
+# on a memory-capped HPC allocation. 0 disables it; only matters under heavy
+# concurrent load, which this single-client local server never sees. Override
+# with VLLM_SWAP_SPACE_GB if you&#x27;re somewhere with RAM to spare.
+SWAP_SPACE_GB = int(os.getenv(&quot;VLLM_SWAP_SPACE_GB&quot;, &quot;0&quot;))
+
+
+def detect_gpu_dtype_and_backend() -&gt; tuple[str, str | None]:
+    &quot;&quot;&quot;
+    Picks a dtype + attention backend that actually work on whatever GPU is
+    present, instead of assuming the A100-class hardware this config was
+    originally written against.
+
+    - bfloat16 (vLLM&#x27;s default for Qwen2.5) requires Ampere or newer
+      (compute capability &gt;= 8.0). V100 is Volta (7.0) and will fail to
+      load the model in bf16, so pre-Ampere cards get float16 instead.
+    - vLLM&#x27;s FlashAttention-2 backend also requires Ampere+ (SM80). On
+      older cards it needs to be pointed at the XFormers backend instead,
+      or the server fails at attention-kernel build time.
+
+    Falls back to bfloat16 / vLLM&#x27;s own default backend selection if torch
+    or CUDA aren&#x27;t available at import time (e.g. dry-running this file off
+    the GPU node) — vLLM will do its own device check at launch anyway.
+
+    Also fails fast (RuntimeError) if the installed `torch` build has no
+    compiled kernels at all for this GPU&#x27;s compute capability. This can&#x27;t be
+    worked around with --dtype/--attention-backend flags — it means the
+    wheel itself was built without this architecture&#x27;s kernels (e.g. recent
+    torch/vllm releases dropped sm_70/Volta/V100 support outright). Without
+    this check, that failure only surfaces ~60-90s later as a cryptic
+    &quot;CUDA error: no kernel image is available for execution on the device&quot;
+    deep inside the vLLM subprocess, after weights have already downloaded.
+    &quot;&quot;&quot;
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return &quot;bfloat16&quot;, None
+
+        major, minor = torch.cuda.get_device_capability(0)
+        name = torch.cuda.get_device_name(0)
+        cc_str = f&quot;{major}.{minor}&quot;
+
+        # torch.cuda.get_arch_list() returns strings like [&quot;sm_70&quot;, &quot;sm_75&quot;,
+        # &quot;sm_80&quot;, &quot;sm_86&quot;, &quot;sm_90&quot;, &quot;sm_100&quot;] — the exact CUDA architectures
+        # this torch build was compiled with kernels for. Parse &quot;sm_XY&quot; into
+        # (major, minor): two-digit codes split 1+1 (e.g. &quot;75&quot; -&gt; 7.5),
+        # three-digit codes (Blackwell+) split 2+1 (e.g. &quot;100&quot; -&gt; 10.0).
+        def parse_sm(arch: str) -&gt; tuple[int, int] | None:
+            digits = arch.removeprefix(&quot;sm_&quot;).removesuffix(&quot;a&quot;)
+            if not digits.isdigit():
+                return None
+            return (int(digits[:-1]), int(digits[-1]))
+
+        supported_ccs = {
+            parsed for arch in torch.cuda.get_arch_list()
+            if (parsed := parse_sm(arch)) is not None
+        }
+
+        if supported_ccs and (major, minor) not in supported_ccs:
+            raise RuntimeError(
+                f&quot;Installed torch=={torch.__version__} has no compiled CUDA kernels &quot;
+                f&quot;for {name} (compute capability {cc_str}). This build only supports: &quot;
+                f&quot;{sorted(supported_ccs)}. This is NOT fixable with --dtype or &quot;
+                f&quot;VLLM_ATTENTION_BACKEND flags — the kernels simply aren&#x27;t in this &quot;
+                f&quot;wheel. Reinstall the pinned torch/vllm versions from &quot;
+                f&quot;requirements.txt (`pip install -r requirements.txt`), which target &quot;
+                f&quot;CUDA 12.1 wheels that still include this architecture. See &quot;
+                f&quot;VLLM_GPU_GUIDE.md for the full explanation.&quot;
+            )
+
+        if major &lt; 8:
+            print(f&quot;[vllm] Detected pre-Ampere GPU ({name}, compute capability &quot;
+                  f&quot;{cc_str}) — using float16 + XFormers attention backend &quot;
+                  f&quot;instead of the bfloat16/FlashAttention defaults, which &quot;
+                  f&quot;require Ampere (A100) or newer.&quot;)
+            return &quot;float16&quot;, &quot;XFORMERS&quot;
+        return &quot;bfloat16&quot;, None
+    except RuntimeError:
+        raise
+    except Exception:
+        return &quot;bfloat16&quot;, None
+
+
+OSS_DTYPE, OSS_ATTENTION_BACKEND = detect_gpu_dtype_and_backend()
+
+
+def find_bundled_cuda_home() -&gt; str | None:
+    &quot;&quot;&quot;
+    Some of vLLM&#x27;s own dependencies (e.g. nvidia-cuda-nvcc, pulled in via
+    torch) bundle a working `nvcc` directly inside this Python environment&#x27;s
+    site-packages — at e.g. .../site-packages/nvidia/cu13/bin/nvcc. HPC
+    compute nodes commonly have no system-wide CUDA toolkit on PATH, but this
+    pip-installed copy is enough for vLLM&#x27;s JIT-compiled kernels (e.g.
+    FlashInfer&#x27;s sampling kernel) to build successfully.
+
+    Searches the *current* environment (works for any venv/conda env, any
+    CUDA version — no hardcoded username or version number) and returns the
+    CUDA_HOME-style directory (the parent of bin/nvcc), or None if not found.
+    &quot;&quot;&quot;
+    site_packages = sysconfig.get_paths()[&quot;purelib&quot;]
+    matches = glob.glob(os.path.join(site_packages, &quot;nvidia&quot;, &quot;cu*&quot;, &quot;bin&quot;, &quot;nvcc&quot;))
+    if not matches:
+        return None
+    nvcc_path = matches[0]
+    return os.path.dirname(os.path.dirname(nvcc_path))  # strip off /bin/nvcc
+
+
+def ensure_weights_downloaded() -&gt; str:
+    &quot;&quot;&quot;
+    Explicit, visible weight check — run before the server ever launches.
+    Checks the local Hugging Face cache first; only reaches out to Hugging
+    Face Hub (the official source for this model) if the weights aren&#x27;t
+    already present locally. Safe to call every run: a fast local-only check
+    when already cached, a real download only the first time.
+
+    Returns the local filesystem path to the model snapshot, which gets
+    passed directly to `vllm serve` — so vLLM doesn&#x27;t need to redo this
+    check itself, and the download step is visibly ours, not hidden inside
+    the server subprocess&#x27;s logs.
+    &quot;&quot;&quot;
+    from huggingface_hub import snapshot_download
+
+    print(f&quot;[weights] Checking local cache for {OSS_MODEL_PATH} ...&quot;)
+    try:
+        local_path = snapshot_download(repo_id=OSS_MODEL_PATH, local_files_only=True)
+        print(f&quot;[weights] Found cached weights -&gt; {local_path}&quot;)
+    except Exception:
+        print(
+            f&quot;[weights] Not found locally. Downloading {OSS_MODEL_PATH} from &quot;
+            f&quot;Hugging Face Hub (huggingface.co/{OSS_MODEL_PATH}) — one-time, &quot;
+            f&quot;may take several minutes depending on connection speed...&quot;
+        )
+        local_path = snapshot_download(repo_id=OSS_MODEL_PATH)
+        print(f&quot;[weights] Download complete -&gt; {local_path}&quot;)
+    return local_path
+
+
+class VLLMServerManager:
+    &quot;&quot;&quot;
+    Owns the vLLM server subprocess&#x27;s entire lifecycle. Everything here stays
+    on this machine — 127.0.0.1 only, no external network exposure, no key
+    needed. Use as a context manager so the model is guaranteed to start
+    before simulations run and guaranteed to be killed afterward — including
+    on error/interrupt.
+
+        with VLLMServerManager() as client:
+            ... run simulations using `client` (an openai.OpenAI instance) ...
+        # server process is already terminated here
+    &quot;&quot;&quot;
+
+    def __init__(self):
+        self.proc = None
+        self.client = None
+        self._log_file = None
+
+    def _check_port_free(self) -&gt; None:
+        &quot;&quot;&quot;
+        Fails fast if something already holds VLLM_PORT.
+
+        An interrupted run (SIGKILL, node preemption, a hard Ctrl-C that skips
+        __exit__) can orphan a vLLM server that keeps the port — and its GPU
+        memory — indefinitely. Without this check the new server starts anyway,
+        dies on &quot;OSError: [Errno 98] Address already in use&quot; *inside the
+        subprocess*, and the parent just reports a generic &quot;exited early&quot; after
+        burning the full startup wait — leaving you to dig the real one-line
+        cause out of vllm_server.log. Checking here turns that into an instant,
+        actionable error.
+
+        We deliberately do NOT auto-kill the port holder: it may be a server
+        from a different job you&#x27;re intentionally running, and silently killing
+        another process (and its GPU allocation) is not a decision this code
+        should make for you.
+        &quot;&quot;&quot;
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            # SO_REUSEADDR mirrors what a server does, so this bind test
+            # reflects whether vLLM itself could actually bind the port.
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                s.bind((VLLM_HOST, VLLM_PORT))
+            except OSError:
+                raise RuntimeError(
+                    f&quot;Port {VLLM_PORT} on {VLLM_HOST} is already in use — most likely an &quot;
+                    f&quot;orphaned vLLM server from a previous run that was killed before it &quot;
+                    f&quot;could shut down cleanly.\n\n&quot;
+                    f&quot;  See what&#x27;s holding it:  lsof -i :{VLLM_PORT}\n&quot;
+                    f&quot;  Kill just that process: lsof -ti :{VLLM_PORT} | xargs -r kill -9\n&quot;
+                    f&quot;  Kill all your servers:  pkill -9 -u $USER -f &#x27;vllm serve&#x27;\n\n&quot;
+                    f&quot;Or set VLLM_PORT to a free port to run alongside it &quot;
+                    f&quot;(note: a second 7B server needs its own ~15GB of GPU memory).&quot;
+                ) from None
+
+    def __enter__(self) -&gt; OpenAI:
+        # Cheap preflight before the expensive work (weight check, model load) —
+        # a busy port makes everything after it pointless.
+        self._check_port_free()
+
+        # Pre-warm the cache and print explicit &quot;did we download or reuse
+        # cache&quot; feedback. We deliberately do NOT hand the resolved local
+        # snapshot path to `vllm serve` below — passing a raw local
+        # directory takes a less-common code path inside vLLM&#x27;s model
+        # resolution and was observed re-triggering a second full download
+        # of the same weights. Passing the plain repo id instead lets vLLM
+        # do its own (well-tested) HF cache lookup, which — since HF_HOME is
+        # inherited by the subprocess — hits the exact same cache we just
+        # warmed, instantly, with no redundant network transfer.
+        ensure_weights_downloaded()
+
+        # Invoke the `vllm` console script directly rather than `python -m
+        # vllm.entrypoints.cli.main` — that internal module path is NOT
+        # stable across vLLM releases (it was introduced in a later CLI
+        # refactor; vllm==0.6.x, for example, doesn&#x27;t have it at all and
+        # raises ModuleNotFoundError). &quot;vllm serve &lt;model&gt; [flags]&quot; is the
+        # publicly documented, version-stable entrypoint — pip always
+        # installs it as a console script next to the interpreter it was
+        # installed for, so resolving it relative to sys.executable (rather
+        # than trusting PATH, which pip --user installs often aren&#x27;t on)
+        # works the same whether you&#x27;re in a venv, conda env, or --user
+        # install.
+        vllm_bin = os.path.join(os.path.dirname(sys.executable), &quot;vllm&quot;)
+        if not os.path.exists(vllm_bin):
+            vllm_bin = &quot;vllm&quot;  # fall back to PATH lookup as a last resort
+
+        cmd = [
+            vllm_bin, &quot;serve&quot;, OSS_MODEL_PATH,
+            &quot;--host&quot;, VLLM_HOST,
+            &quot;--port&quot;, str(VLLM_PORT),
+            &quot;--tensor-parallel-size&quot;, str(TENSOR_PARALLEL_SIZE),
+            &quot;--gpu-memory-utilization&quot;, str(GPU_MEMORY_UTILIZATION),
+            &quot;--max-model-len&quot;, str(MAX_MODEL_LEN),
+            &quot;--dtype&quot;, OSS_DTYPE,
+            # By default vllm==0.6.x runs the engine in a separate subprocess
+            # from the API server and talks to it over ZeroMQ IPC (Unix
+            # domain sockets, via a temp-dir socket file). On HPC clusters
+            # where the temp dir resolves onto a network/parallel filesystem
+            # (e.g. Lustre-backed scratch, common on CARC-style clusters),
+            # that socket transport isn&#x27;t supported and every RPC call fails
+            # with &quot;zmq.error.ZMQError: Operation not supported&quot; (ENOTSUP) —
+            # even after the model has already loaded onto the GPU fine.
+            # Disabling frontend multiprocessing runs the engine in-process
+            # with the API server instead, sidestepping ZMQ/IPC entirely.
+            # Harmless here: this server only ever handles one local client
+            # (this repo&#x27;s own simulations) at a time, so the throughput
+            # vLLM normally gains from a separate engine process doesn&#x27;t
+            # matter.
+            &quot;--disable-frontend-multiprocessing&quot;,
+            # Skip CUDA graph capture. Costs a little per-token decode
+            # latency, but cuts startup time and peak memory during engine
+            # init — a good trade for this repo&#x27;s batch-simulation workload,
+            # which isn&#x27;t latency-sensitive per token.
+            &quot;--enforce-eager&quot;,
+            # vLLM defaults to swap_space=4 (GiB) of CPU-side KV cache, which
+            # it allocates as *pinned* host memory right after it logs
+            # &quot;# GPU blocks / # CPU blocks&quot;. Pinned pages can&#x27;t be swapped
+            # out, so on an allocation with a tight host-RAM cgroup limit
+            # (typical of CARC interactive GPU sessions) that single ~4.3GB
+            # request is enough for the OOM killer to SIGKILL the process —
+            # exit code -9, no Python traceback, right after the model itself
+            # loaded onto the GPU fine. This swap space only matters for
+            # preemption under heavy concurrent load; this server handles one
+            # local client at a time, so it&#x27;s dead weight here.
+            &quot;--swap-space&quot;, str(SWAP_SPACE_GB),
+        ]
+
+        env = os.environ.copy()
+
+        # Force the attention backend on pre-Ampere GPUs (e.g. V100), where
+        # vLLM&#x27;s default FlashAttention-2 backend can&#x27;t build/run at all.
+        if OSS_ATTENTION_BACKEND:
+            env[&quot;VLLM_ATTENTION_BACKEND&quot;] = OSS_ATTENTION_BACKEND
+
+        # vLLM&#x27;s FlashInfer sampling path JIT-compiles a CUDA kernel on first
+        # use. FlashInfer&#x27;s own bundled CCCL/libcudacxx headers were observed
+        # to be incompatible with CUDA 13.x nvcc on this environment (&quot;CUDA
+        # compiler and CUDA toolkit headers are incompatible&quot; — an upstream
+        # FlashInfer/CUDA-13 version gap, not something fixable by pointing
+        # at a different nvcc). Force-disable the FlashInfer sampler so vLLM
+        # falls back to its regular PyTorch-native sampler instead — no JIT
+        # compilation involved, avoids this whole class of failure. This is
+        # a direct assignment (not setdefault) so it wins even if a CARC
+        # module/profile has already set this to something else.
+        env[&quot;VLLM_USE_FLASHINFER_SAMPLER&quot;] = &quot;0&quot;
+
+        # Separately: some *other* JIT-compiled kernel elsewhere in vLLM
+        # might still need nvcc and not hit the FlashInfer/CCCL incompatibility
+        # above, so keep pointing CUDA_HOME at the pip-bundled nvcc as a
+        # general-purpose fallback (harmless if unused).
+        cuda_home = find_bundled_cuda_home()
+        if cuda_home:
+            print(f&quot;[vllm] Found bundled CUDA toolkit (nvcc) at {cuda_home}&quot;)
+            env.setdefault(&quot;CUDA_HOME&quot;, cuda_home)
+            env[&quot;PATH&quot;] = os.path.join(cuda_home, &quot;bin&quot;) + os.pathsep + env.get(&quot;PATH&quot;, &quot;&quot;)
+        else:
+            print(&quot;[vllm] WARNING: no local nvcc found in this environment — &quot;
+                  &quot;other JIT-compiled kernels may fail to build. &quot;
+                  &quot;If startup fails with an nvcc error, try `module load cuda` before running.&quot;)
+
+        print(f&quot;[vllm] Starting local server: {&#x27; &#x27;.join(cmd)}&quot;)
+        self._log_file = open(&quot;vllm_server.log&quot;, &quot;w&quot;)
+        self.proc = subprocess.Popen(cmd, stdout=self._log_file, stderr=subprocess.STDOUT, env=env)
+
+        self._wait_until_healthy()
+        print(f&quot;[vllm] Server healthy at {VLLM_BASE_URL}&quot;)
+
+        self.client = OpenAI(base_url=VLLM_BASE_URL, api_key=PLACEHOLDER_KEY)
+        return self.client
+
+    def _wait_until_healthy(self):
+        deadline = time.time() + STARTUP_TIMEOUT_SEC
+        last_progress_print = 0
+        while time.time() &lt; deadline:
+            if self.proc.poll() is not None:
+                raise RuntimeError(
+                    f&quot;vLLM server exited early (code {self.proc.returncode}) — see vllm_server.log&quot;
+                )
+            try:
+                r = requests.get(f&quot;http://{VLLM_HOST}:{VLLM_PORT}/health&quot;, timeout=2)
+                if r.status_code == 200:
+                    return
+            except requests.exceptions.RequestException:
+                pass
+
+            elapsed = time.time() - (deadline - STARTUP_TIMEOUT_SEC)
+            if elapsed - last_progress_print &gt;= 30:
+                print(f&quot;[vllm] Still waiting for server to become healthy &quot;
+                      f&quot;({int(elapsed)}s elapsed) — tail vllm_server.log for details...&quot;)
+                last_progress_print = elapsed
+
+            time.sleep(2)
+        raise TimeoutError(
+            f&quot;vLLM server did not become healthy within {STARTUP_TIMEOUT_SEC}s — &quot;
+            f&quot;check vllm_server.log for what it was doing (model loading, CUDA graph &quot;
+            f&quot;capture, and kernel compilation on a first run can genuinely take several &quot;
+            f&quot;minutes for a 7B model).&quot;
+        )
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.proc and self.proc.poll() is None:
+            print(&quot;[vllm] Stopping local server...&quot;)
+            self.proc.terminate()
+            try:
+                self.proc.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()  # hard-kill if it won&#x27;t shut down cleanly
+            print(&quot;[vllm] Server stopped.&quot;)
+        if self._log_file:
+            self._log_file.close()
+        return False  # never swallow exceptions from the `with` block
+</code></pre></details>
+<details class="mh-code"><summary><b>agents.py</b></summary><pre class="mh-pre"><code>&quot;&quot;&quot;
+agents.py — Mulholland Multiagent System
+=========================================
+THE NEURAL LAYER — All 13 Negotiation Agents
+
+Single source of truth for every agent in the simulation.
+Covers all 5 stakeholder categories defined in Appendix B §(b):
+
+  Category 1 — 7 Basin States   : CA, AZ, NV, CO, UT, WY, NM
+  Category 2 — Federal Agencies : Bureau of Reclamation / DOI / USFWS
+  Category 3 — Tribal Nations   : Navajo Nation, CRIT
+  Category 4 — International    : Mexico / IBWC
+  Category 5 — Water Users/Env  : IID (agricultural), Environmental/ESA
+
+All 13 agents share one class — NegotiationAgent — which adapts its
+system prompt based on each agent&#x27;s type while sharing identical
+proposal-generation mechanics and JSON output schema.
+
+The symbolic constraint checker (constraint_checker.py) runs AFTER every
+GPT call. The agents themselves are unaware of this validation step.
+
+    TRIBAL AGENT NOTICE (Appendix B §g, Rule 5e):
+    Navajo Nation and CRIT mandates are based on documented legal positions
+    and court decisions (Winters v. US, Arizona v. California).
+    AI simulation CANNOT capture tribal cultural values, traditional
+    ecological knowledge, or community decision-making.
+    Direct tribal governmental consultation is required for any real-world use.
+&quot;&quot;&quot;
+
+import json
+import openai
+from config          import OPENAI_API_KEY, MODEL, MAX_TOKENS_PER_CALL, HISTORY_WINDOW_ROUNDS
+from legal_framework import ALL_AGENT_CEILINGS_MAF
+
+# ── Lazy OpenAI client ────────────────────────────────────────────────────────
+_client = None
+
+def _get_openai_client():
+    global _client
+    if _client is None:
+        if not OPENAI_API_KEY:
+            raise EnvironmentError(
+                &quot;OPENAI_API_KEY is not set. &quot;
+                &quot;Create a .env file with:  OPENAI_API_KEY=sk-...&quot;
+            )
+        _client = openai.OpenAI(api_key=OPENAI_API_KEY)
+    return _client
+
+
+# ── Active client override (set by main.py when using config_open_source.py) ──
+# Strictly additive: if nothing ever calls set_active_client(), _get_client()
+# and _active_model behave exactly as before (OpenAI, config.MODEL).
+_active_client = None
+_active_model  = MODEL
+
+def set_active_client(client, model_name: str):
+    &quot;&quot;&quot;Swaps in a different chat.completions-compatible client (e.g. a local
+    vLLM server via config_open_source.py) and the model name to request.&quot;&quot;&quot;
+    global _active_client, _active_model
+    _active_client, _active_model = client, model_name
+
+def _get_client():
+    return _active_client or _get_openai_client()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ALL_MANDATES — Single registry for all 13 negotiation agents
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ALL_MANDATES = {
+
+    # ── CATEGORY 1: SEVEN BASIN STATES ───────────────────────────────────────
+
+    &quot;California&quot;: {
+        &quot;agent_type&quot;:   &quot;state&quot;,
+        &quot;full_name&quot;:    &quot;State of California&quot;,
+        &quot;priority&quot;:     &quot;Senior — Boulder Canyon Project Act 1928&quot;,
+        &quot;dependencies&quot;: (
+            &quot;Imperial Irrigation District (~3.1 MAF senior agricultural), &quot;
+            &quot;Coachella Valley, Palo Verde IDs, Metropolitan Water District (junior municipal). &quot;
+            &quot;~40 million residents depend on Colorado River water.&quot;
+        ),
+        &quot;position&quot;: (
+            &quot;Protect senior agricultural rights above all else. Willing to discuss &quot;
+            &quot;voluntary conservation with compensation but resists mandatory reallocation. &quot;
+            &quot;Historically received surplus above 4.4 MAF — treats this as baseline.&quot;
+        ),
+        &quot;negotiation_style&quot;: (
+            &quot;Assertive and legalistic. Emphasises senior priority, economic harm, &quot;
+            &quot;and long-standing infrastructure reliance.&quot;
+        ),
+        &quot;red_lines&quot;: [
+            &quot;Mandatory cuts to senior agricultural rights require full financial compensation.&quot;,
+            &quot;Minimum acceptable allocation: 3.8 MAF under any shortage scenario.&quot;,
+            &quot;IID&#x27;s senior rights take precedence over MWD&#x27;s junior rights — internal priority order is inviolable.&quot;,
+        ],
+    },
+
+    &quot;Arizona&quot;: {
+        &quot;agent_type&quot;:   &quot;state&quot;,
+        &quot;full_name&quot;:    &quot;State of Arizona&quot;,
+        &quot;priority&quot;:     &quot;Junior CAP — Colorado River Basin Project Act 1968&quot;,
+        &quot;dependencies&quot;: (
+            &quot;Central Arizona Project (CAP) serves Phoenix and Tucson municipal supply. &quot;
+            &quot;First-tier shortage exposure. Has already absorbed ~500k AF in Tier 1/2 cuts.&quot;
+        ),
+        &quot;position&quot;: (
+            &quot;Has borne a disproportionate shortage burden. Seeks equitable burden-sharing &quot;
+            &quot;from California. Open to conservation investment if Lower Basin load is redistributed.&quot;
+        ),
+        &quot;negotiation_style&quot;: (
+            &quot;Pragmatic and compromise-oriented. Frames proposals around fairness. &quot;
+            &quot;Natural coalition partner with Nevada to pressure California.&quot;
+        ),
+        &quot;red_lines&quot;: [
+            &quot;Refuses additional shortage cuts without measurable California contribution.&quot;,
+            &quot;Minimum allocation to sustain Phoenix and Tucson: 1.8 MAF.&quot;,
+        ],
+    },
+
+    &quot;Nevada&quot;: {
+        &quot;agent_type&quot;:   &quot;state&quot;,
+        &quot;full_name&quot;:    &quot;State of Nevada&quot;,
+        &quot;priority&quot;:     &quot;Junior Lower Basin&quot;,
+        &quot;dependencies&quot;: (
+            &quot;Las Vegas Valley Water District — ~90% of supply from Colorado River. &quot;
+            &quot;SNWA achieves 99% indoor water recycling. Smallest compact allocation of any state.&quot;
+        ),
+        &quot;position&quot;: (
+            &quot;Conservation champion — leads all states in efficiency. Advocates for &quot;
+            &quot;conservation-first framework. Needs infrastructure investment credit for &quot;
+            &quot;past conservation achievements.&quot;
+        ),
+        &quot;negotiation_style&quot;: (
+            &quot;Moral framing: most efficient, gets least credit. &quot;
+            &quot;Uses conservation leadership as bargaining chip. Coalition with Arizona.&quot;
+        ),
+        &quot;red_lines&quot;: [
+            &quot;Allocation below 0.22 MAF is existential for Las Vegas — absolute floor.&quot;,
+            &quot;Conservation efficiency credits for already-built infrastructure are non-negotiable.&quot;,
+        ],
+    },
+
+    &quot;Colorado&quot;: {
+        &quot;agent_type&quot;:   &quot;state&quot;,
+        &quot;full_name&quot;:    &quot;State of Colorado&quot;,
+        &quot;priority&quot;:     &quot;Upper Basin Senior — 1948 Compact (51.75% = 3.881 MAF)&quot;,
+        &quot;dependencies&quot;: (
+            &quot;Western Slope agricultural economy. Rapidly growing Denver metro. &quot;
+            &quot;Has NOT fully developed compact entitlement — reserves it for future growth.&quot;
+        ),
+        &quot;position&quot;: (
+            &quot;Strongly opposed to permanent demand reductions. &quot;
+            &quot;Open to voluntary, compensated, temporary demand management only. &quot;
+            &quot;Lee Ferry obligation must be met through system cooperation.&quot;
+        ),
+        &quot;negotiation_style&quot;: (
+            &quot;Protective of future development rights. Leads Upper Basin coalition. &quot;
+            &quot;Emphasises state sovereignty and resists federal mandates.&quot;
+        ),
+        &quot;red_lines&quot;: [
+            &quot;Will not accept permanent reduction of compact entitlement under any scenario.&quot;,
+            &quot;Any demand management must be voluntary and financially compensated.&quot;,
+        ],
+    },
+
+    &quot;Utah&quot;: {
+        &quot;agent_type&quot;:   &quot;state&quot;,
+        &quot;full_name&quot;:    &quot;State of Utah&quot;,
+        &quot;priority&quot;:     &quot;Upper Basin — 1948 Compact (23% = 1.725 MAF)&quot;,
+        &quot;dependencies&quot;: (
+            &quot;Agricultural communities in Colorado River watershed. &quot;
+            &quot;Rapidly growing Wasatch Front (Salt Lake City). &quot;
+            &quot;Lake Powell elevation directly affects Utah hydropower and recreation.&quot;
+        ),
+        &quot;position&quot;: (
+            &quot;Supports Upper Basin solidarity; coordinates with Colorado. &quot;
+            &quot;Developing infrastructure to use full compact entitlement.&quot;
+        ),
+        &quot;negotiation_style&quot;: (
+            &quot;Collaborative within Upper Basin bloc. Seeks collective positions &quot;
+            &quot;before engaging Lower Basin. Moderate and measured tone.&quot;
+        ),
+        &quot;red_lines&quot;: [
+            &quot;Must preserve future development rights for the growing Wasatch Front.&quot;,
+        ],
+    },
+
+    &quot;Wyoming&quot;: {
+        &quot;agent_type&quot;:   &quot;state&quot;,
+        &quot;full_name&quot;:    &quot;State of Wyoming&quot;,
+        &quot;priority&quot;:     &quot;Upper Basin — 1948 Compact (14% = 1.050 MAF)&quot;,
+        &quot;dependencies&quot;: (
+            &quot;Agricultural and ranching economy in Green River basin. &quot;
+            &quot;Headwaters state — contributes significant natural flow to the system.&quot;
+        ),
+        &quot;position&quot;: (
+            &quot;Least developed Upper Basin state. Reserves right to fully develop &quot;
+            &quot;compact allocation. Deeply opposed to federal override of state water law.&quot;
+        ),
+        &quot;negotiation_style&quot;: (
+            &quot;Reserved and principled. Firm on property rights and state sovereignty. &quot;
+            &quot;Will walk away from agreements setting bad long-term precedents.&quot;
+        ),
+        &quot;red_lines&quot;: [
+            &quot;No federal mandates without explicit state legislative consent.&quot;,
+            &quot;Voluntary-only demand management — no coercion.&quot;,
+        ],
+    },
+
+    &quot;New Mexico&quot;: {
+        &quot;agent_type&quot;:   &quot;state&quot;,
+        &quot;full_name&quot;:    &quot;State of New Mexico&quot;,
+        &quot;priority&quot;:     &quot;Upper Basin junior — 1948 Compact (11.25% = 0.844 MAF)&quot;,
+        &quot;dependencies&quot;: (
+            &quot;Agricultural communities in San Juan–Chama region. &quot;
+            &quot;Navajo Nation tribal water rights: substantial and largely unquantified. &quot;
+            &quot;Albuquerque municipal supply via San Juan–Chama Project.&quot;
+        ),
+        &quot;position&quot;: (
+            &quot;Will not sign any agreement ignoring tribal water rights. &quot;
+            &quot;Advocates for Navajo Nation as a full stakeholder with a defined &quot;
+            &quot;quantification pathway embedded in any final deal.&quot;
+        ),
+        &quot;negotiation_style&quot;: (
+            &quot;Equity-focused and tribal-rights advocate. &quot;
+            &quot;Uses Winters doctrine and federal trust responsibility as legal leverage. &quot;
+            &quot;Will block agreement if tribal interests are sidelined.&quot;
+        ),
+        &quot;red_lines&quot;: [
+            &quot;Any final agreement must include a defined legal pathway for Navajo Nation water rights quantification.&quot;,
+            &quot;Will not trade tribal rights for a larger state allocation.&quot;,
+        ],
+    },
+
+    # ── CATEGORY 2: FEDERAL AGENCIES ─────────────────────────────────────────
+
+    &quot;Federal_BOR&quot;: {
+        &quot;agent_type&quot;:  &quot;federal&quot;,
+        &quot;full_name&quot;:   &quot;United States — Bureau of Reclamation / Dept. of Interior / USFWS&quot;,
+        &quot;authority&quot;: (
+            &quot;Bureau of Reclamation operates Hoover Dam, Glen Canyon Dam, and all &quot;
+            &quot;federal Colorado River infrastructure. Has authority to declare shortages, &quot;
+            &quot;set release schedules, and enforce compact compliance. &quot;
+            &quot;USFWS enforces ESA critical habitat protections. &quot;
+            &quot;DOI holds tribal trust responsibility for all federally recognised tribes.&quot;
+        ),
+        &quot;position&quot;: (
+            &quot;Must balance all legal obligations simultaneously: compact enforcement, &quot;
+            &quot;Mexico treaty delivery (1.5 MAF), ESA compliance, tribal trust, and &quot;
+            &quot;infrastructure integrity. Has warned it will impose mandatory cuts if &quot;
+            &quot;states cannot reach voluntary agreement. Strongly prefers interstate solution.&quot;
+        ),
+        &quot;negotiation_style&quot;: (
+            &quot;Neutral arbiter and enforcer. Does not advocate for any single state. &quot;
+            &quot;Frames proposals around legal obligation and system-wide sustainability. &quot;
+            &quot;Uses threat of federal imposition to concentrate minds.&quot;
+        ),
+        &quot;red_lines&quot;: [
+            &quot;Lake Powell must stay above 3,490 ft minimum pool — non-negotiable operational floor.&quot;,
+            &quot;Lake Mead must stay above 895 ft dead pool — below this water cannot be released.&quot;,
+            &quot;Mexico treaty delivery minimum 1.4 MAF under shortage (Minute 323) must be honored.&quot;,
+            &quot;ESA-listed species critical habitat flow requirements cannot be eliminated.&quot;,
+        ],
+    },
+
+    # ── CATEGORY 3: TRIBAL NATIONS ────────────────────────────────────────────
+
+    &quot;Navajo_Nation&quot;: {
+        &quot;agent_type&quot;:  &quot;tribal&quot;,
+        &quot;full_name&quot;:   &quot;Navajo Nation&quot;,
+        &quot;authority&quot;: (
+            &quot;Largest Native American nation in the US. Reserved water rights under &quot;
+            &quot;Winters v. United States (1908) — priority date predates most state &quot;
+            &quot;appropriations. Substantial unquantified claims in ongoing litigation &quot;
+            &quot;(Arizona v. Navajo Nation, US Supreme Court 2023). &quot;
+            &quot;Approximately 30% of Navajo households currently lack running water.&quot;
+        ),
+        &quot;position&quot;: (
+            &quot;Seeks formal quantification and recognition of reserved rights as a &quot;
+            &quot;precondition to any basin-wide agreement. Will not accept any framework &quot;
+            &quot;that forecloses unquantified reserved rights claims. &quot;
+            &quot;Demands formal tribal consultation pathway in governance structure.&quot;
+        ),
+        &quot;negotiation_style&quot;: (
+            &quot;Rights-first framing grounded in Winters doctrine and federal trust responsibility. &quot;
+            &quot;Moral authority: 30% of households without water is a compelling humanitarian argument. &quot;
+            &quot;Coalition with New Mexico and CRIT. Will block agreement if sidelined.&quot;
+        ),
+        &quot;red_lines&quot;: [
+            &quot;No agreement accepted without a defined legal pathway for Navajo water rights quantification.&quot;,
+            &quot;Federal trust responsibility must be explicitly acknowledged in any new governance framework.&quot;,
+            &quot;Will not waive reserved rights claims in exchange for a fixed state-level allocation.&quot;,
+            &quot;Minimum immediate infrastructure investment required for households currently without water.&quot;,
+        ],
+        &quot;_tribal_disclaimer&quot;: (
+            &quot;Configured based on documented legal positions and court records &quot;
+            &quot;(Arizona v. Navajo Nation, Winters v. US). Cannot capture Navajo cultural, &quot;
+            &quot;spiritual, or traditional ecological relationships with water, or community &quot;
+            &quot;decision-making processes. Direct tribal governmental consultation is required &quot;
+            &quot;before using simulation outputs for any real-world purpose.&quot;
+        ),
+    },
+
+    &quot;CRIT&quot;: {
+        &quot;agent_type&quot;:  &quot;tribal&quot;,
+        &quot;full_name&quot;:   &quot;Colorado River Indian Tribes (CRIT)&quot;,
+        &quot;authority&quot;: (
+            &quot;CRIT holds quantified reserved water rights of ~717,148 AF/year with a &quot;
+            &quot;priority date of 1865 — among the most senior water rights on the entire river, &quot;
+            &quot;predating all state compact allocations. Rights confirmed in Arizona v. California &quot;
+            &quot;(1963–2006 decrees). Reservation spans AZ-CA border along the Lower Colorado.&quot;
+        ),
+        &quot;position&quot;: (
+            &quot;Legally secure and quantified position allows negotiating from strength. &quot;
+            &quot;Seeks water marketing opportunities — leasing conserved water to Lower Basin &quot;
+            &quot;states for compensation is a key economic development strategy. &quot;
+            &quot;Supports shortage-sharing only where CRIT receives fair compensation.&quot;
+        ),
+        &quot;negotiation_style&quot;: (
+            &quot;Pragmatic and market-oriented. Secured legal position is the foundation. &quot;
+            &quot;Interested in water marketing and lease revenue as economic development. &quot;
+            &quot;Coalition with Navajo Nation on sovereignty recognition.&quot;
+        ),
+        &quot;red_lines&quot;: [
+            &quot;Senior priority rights (pre-1865) cannot be subordinated to state compact rights.&quot;,
+            &quot;Any voluntary reductions must be compensated at fair market rate — no uncompensated cuts.&quot;,
+            &quot;Tribal sovereignty and government-to-government consultation must be in any new governance framework.&quot;,
+        ],
+        &quot;_tribal_disclaimer&quot;: (
+            &quot;Configured based on Arizona v. California decree terms and documented CRIT &quot;
+            &quot;governmental positions. Direct tribal consultation required for any real-world use.&quot;
+        ),
+    },
+
+    # ── CATEGORY 4: INTERNATIONAL ────────────────────────────────────────────
+
+    &quot;Mexico_IBWC&quot;: {
+        &quot;agent_type&quot;:  &quot;international&quot;,
+        &quot;full_name&quot;:   &quot;United Mexican States — International Boundary and Water Commission (IBWC)&quot;,
+        &quot;authority&quot;: (
+            &quot;Mexican Water Treaty of 1944 guarantees Mexico 1.5 MAF/year under normal &quot;
+            &quot;conditions, reducible to 1.4 MAF during declared US shortage (Minute 323). &quot;
+            &quot;IBWC administers delivery at Morelos Dam near Imperial Dam. &quot;
+            &quot;Minute 319 (2012) and Minute 323 (2017) extended cooperative framework — &quot;
+            &quot;currently expiring and requiring renewal.&quot;
+        ),
+        &quot;position&quot;: (
+            &quot;Treaty rights are sovereign obligations under international law — not &quot;
+            &quot;subject to US interstate compact politics. Cooperates on binational &quot;
+            &quot;conservation where Mexico receives tangible benefit. &quot;
+            &quot;Seeks Minute 323 renewal beyond 2026 expiration. &quot;
+            &quot;Raises salinity and water quality as linked treaty concerns.&quot;
+        ),
+        &quot;negotiation_style&quot;: (
+            &quot;Diplomatically firm. Treaty rights as international law obligations. &quot;
+            &quot;Willing to engage on cooperative conservation (Minute 319/323 model) &quot;
+            &quot;but not on reducing treaty delivery floors. &quot;
+            &quot;Will escalate to international arbitration as a last resort.&quot;
+        ),
+        &quot;red_lines&quot;: [
+            &quot;Treaty delivery of 1.5 MAF under normal conditions is a sovereign right — requires bilateral treaty amendment to change.&quot;,
+            &quot;Shortage reduction below 1.4 MAF (Minute 323 floor) requires extraordinary justification and bilateral agreement.&quot;,
+            &quot;Water quality degradation harming Mexicali Valley agriculture constitutes a treaty violation.&quot;,
+            &quot;Minute 323 cooperative framework must be renewed — Mexico will not operate under an expired agreement.&quot;,
+        ],
+    },
+
+    # ── CATEGORY 5: WATER USERS AND ENVIRONMENTAL INTERESTS ──────────────────
+
+    &quot;IID&quot;: {
+        &quot;agent_type&quot;:  &quot;agricultural&quot;,
+        &quot;full_name&quot;:   &quot;Imperial Irrigation District (IID)&quot;,
+        &quot;authority&quot;: (
+            &quot;Most senior water rights in California — ~3.1 MAF/year serving 500,000 &quot;
+            &quot;acres of agriculture in Imperial Valley. Rights SENIOR to Metropolitan &quot;
+            &quot;Water District and all California municipal users under prior appropriation. &quot;
+            &quot;Quantification Settlement Agreement (QSA, 2003) formalised transfers of &quot;
+            &quot;up to 200,000 AF/year to San Diego and Coachella in exchange for &quot;
+            &quot;infrastructure investment.&quot;
+        ),
+        &quot;position&quot;: (
+            &quot;Senior agricultural rights are the cornerstone of California&#x27;s Colorado &quot;
+            &quot;River position. Will defend senior priority aggressively. Open to &quot;
+            &quot;additional compensated transfers only if paired with full infrastructure &quot;
+            &quot;funding and voluntary farmer fallowing payments.&quot;
+        ),
+        &quot;negotiation_style&quot;: (
+            &quot;Assertive defense of prior appropriation doctrine. Sharply distinguishes &quot;
+            &quot;itself from MWD (junior). Junior users cut first, always. &quot;
+            &quot;Economic argument: Imperial Valley agriculture generates ~$2B/year.&quot;
+        ),
+        &quot;red_lines&quot;: [
+            &quot;Senior priority rights cannot be cut before junior municipal users (MWD) — prior appropriation is absolute.&quot;,
+            &quot;No involuntary fallowing — any land fallowing must be voluntary and compensated at fair market value.&quot;,
+            &quot;Infrastructure investment must be secured before IID accepts any new transfer obligations.&quot;,
+        ],
+    },
+
+    &quot;Environmental_ESA&quot;: {
+        &quot;agent_type&quot;:  &quot;environmental&quot;,
+        &quot;full_name&quot;:   &quot;Environmental Coalition — ESA / Ecosystem Flows&quot;,
+        &quot;authority&quot;: (
+            &quot;Endangered Species Act requirements for listed species: razorback sucker, &quot;
+            &quot;bonytail chub, humpback chub, southwestern willow flycatcher, Yuma Ridgway&#x27;s rail. &quot;
+            &quot;Grand Canyon Adaptive Management Program (high-flow experiments, temperature control). &quot;
+            &quot;Colorado River Basin Salinity Control Act water quality standards. &quot;
+            &quot;NEPA environmental review requirements for any operational or infrastructure changes.&quot;
+        ),
+        &quot;position&quot;: (
+            &quot;Environmental flows are ESA legal obligations — not optional amenities. &quot;
+            &quot;Any agreement eliminating critical habitat flows triggers ESA Section 7 &quot;
+            &quot;consultation and biological opinions that could block implementation for years. &quot;
+            &quot;Advocates for minimum ecological flow baseline in new operating guidelines. &quot;
+            &quot;Supports Colorado River Delta restoration (Minute 319 pulse flows).&quot;
+        ),
+        &quot;negotiation_style&quot;: (
+            &quot;Science-first. Cites peer-reviewed flow requirements and ESA mandates. &quot;
+            &quot;Uses litigation risk as leverage: missing ecological flows = years of delay. &quot;
+            &quot;Coalition with Mexico on Delta restoration. Accepts phased implementation &quot;
+            &quot;if ecological floor guarantees are locked in upfront.&quot;
+        ),
+        &quot;red_lines&quot;: [
+            &quot;Glen Canyon Dam temperature control device operations for native fish are a non-negotiable ESA obligation.&quot;,
+            &quot;Minimum 50,000 AF/year ecological flow to Colorado River Delta must be embedded in any agreement.&quot;,
+            &quot;Lake Powell must not drop below 3,525 ft (minimum power pool) — dam stability and ESA flows depend on this.&quot;,
+            &quot;Any agreement must include an ESA Section 7 consultation pathway to prevent litigation blocking implementation.&quot;,
+        ],
+    },
+}
+
+
+# ── Convenience groupings ─────────────────────────────────────────────────────
+
+STATE_AGENTS          = [k for k, v in ALL_MANDATES.items() if v[&quot;agent_type&quot;] == &quot;state&quot;]
+TRIBAL_AGENTS         = [k for k, v in ALL_MANDATES.items() if v[&quot;agent_type&quot;] == &quot;tribal&quot;]
+CONSUMPTIVE_AGENTS    = [k for k in ALL_MANDATES if ALL_AGENT_CEILINGS_MAF.get(k, 0) &gt; 0]
+NON_CONSUMPTIVE_AGENTS= [k for k in ALL_MANDATES if ALL_AGENT_CEILINGS_MAF.get(k, 0) == 0]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# NegotiationAgent — Single class for all 13 agents
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class NegotiationAgent:
+    &quot;&quot;&quot;
+    Represents any of the 13 stakeholders in the Colorado River negotiation.
+
+    NEURAL component: GPT generates proposals in structured JSON.
+    SYMBOLIC component: constraint_checker.py validates them externally.
+
+    System prompt adapts by agent_type; proposal generation is identical
+    for all 13 agents — same GPT call, same JSON schema, same history pattern.
+    &quot;&quot;&quot;
+
+    def __init__(self, agent_name: str):
+        if agent_name not in ALL_MANDATES:
+            raise ValueError(
+                f&quot;Unknown agent: &#x27;{agent_name}&#x27;. &quot;
+                f&quot;Available: {list(ALL_MANDATES.keys())}&quot;
+            )
+        self.name       = agent_name
+        self.mandate    = ALL_MANDATES[agent_name]
+        self.agent_type = self.mandate[&quot;agent_type&quot;]
+        self.ceiling    = ALL_AGENT_CEILINGS_MAF.get(agent_name, 0.0)
+
+        self.conversation_history: list[dict] = []
+        self.proposal_history:     list[dict] = []
+        # Exact text of this agent&#x27;s most recent model generation, kept so the
+        # conversation logger (conversation_log.py) can archive verbatim output.
+        self.last_raw_generation:  str = &quot;&quot;
+        # A correction note set by the moderator when this agent&#x27;s last proposal
+        # was clamped (e.g. it claimed above its legal ceiling). Injected into
+        # the NEXT round&#x27;s prompt so the agent self-corrects instead of
+        # re-anchoring on the rejected number. Consumed once, then cleared.
+        self.pending_feedback:     str = &quot;&quot;
+
+    def _build_system_prompt(self) -&gt; str:
+        &quot;&quot;&quot;Constructs the GPT system prompt, adapting the identity framing by agent_type.&quot;&quot;&quot;
+        m             = self.mandate
+        red_lines_str = &quot;\n  &quot;.join(f&quot;• {r}&quot; for r in m[&quot;red_lines&quot;])
+
+        # ── Identity framing ──────────────────────────────────────────────────
+        type_intros = {
+            &quot;state&quot;:         f&quot;You are the lead water-rights negotiator for the US state of {self.name}, representing your state in a high-stakes Colorado River Basin water allocation negotiation.&quot;,
+            &quot;federal&quot;:       f&quot;You are the senior representative of {m[&#x27;full_name&#x27;]}, serving as neutral arbiter and enforcer — not an advocate for any single state.&quot;,
+            &quot;tribal&quot;:        f&quot;You are the lead water-rights negotiator representing {m[&#x27;full_name&#x27;]}, advocating for tribal sovereignty, reserved water rights, and the economic and cultural needs of your nation.&quot;,
+            &quot;international&quot;: f&quot;You are the senior representative of {m[&#x27;full_name&#x27;]}, representing Mexico&#x27;s treaty rights under international law — not US compact law.&quot;,
+            &quot;agricultural&quot;:  f&quot;You are the lead negotiator for {m[&#x27;full_name&#x27;]}, representing the most senior agricultural water rights in California.&quot;,
+            &quot;environmental&quot;: f&quot;You are the lead representative of {m[&#x27;full_name&#x27;]}, advocating for legally mandated environmental flows, endangered species protections, and ecosystem health.&quot;,
+        }
+        identity = type_intros.get(self.agent_type, f&quot;You are a negotiator for {m[&#x27;full_name&#x27;]}.&quot;)
+
+        # ── Tribal disclaimer (mandatory per Appendix B §g.iv) ───────────────
+        tribal_block = &quot;&quot;
+        if &quot;_tribal_disclaimer&quot; in m:
+            tribal_block = (
+                f&quot;\n⚠️  MANDATORY AI LIMITATION NOTICE (Appendix B §g, Rule 5e):\n&quot;
+                f&quot;{m[&#x27;_tribal_disclaimer&#x27;]}\n&quot;
+                f&quot;Acknowledge this if asked about cultural/spiritual aspects of water. &quot;
+                f&quot;Never fabricate traditional ecological knowledge.\n&quot;
+            )
+
+        # ── Authority field — state agents use priority, others use authority ─
+        authority_text = m.get(&quot;authority&quot;, m.get(&quot;priority&quot;, &quot;&quot;))
+        context_line   = f&quot;Key dependencies : {m[&#x27;dependencies&#x27;]}\n&quot; if &quot;dependencies&quot; in m else &quot;&quot;
+
+        # ── Allocation ceiling instruction ────────────────────────────────────
+        if self.ceiling &gt; 0:
+            ceiling_instruction = f&quot;Maximum allocation you may claim: {self.ceiling:.3f} MAF. Never exceed this.&quot;
+        else:
+            ceiling_instruction = (
+                &quot;You are a non-consumptive actor. Set proposed_allocation_maf to 0.0. &quot;
+                &quot;Your influence is through legal mandates and operational constraints, not water claims.&quot;
+            )
+
+        return f&quot;&quot;&quot;{identity}
+{tribal_block}
+─── YOUR MANDATE ─────────────────────────────────────────────────
+Authority  : {authority_text}
+{context_line}Position   : {m[&#x27;position&#x27;]}
+Style      : {m[&#x27;negotiation_style&#x27;]}
+{ceiling_instruction}
+
+YOUR RED LINES (non-negotiable — never concede these):
+  {red_lines_str}
+
+─── YOUR OBJECTIVE ───────────────────────────────────────────────
+The river is over-allocated: the parties&#x27; combined claims exceed the water
+that physically exists. You have TWO jobs at once, and you fail if you drop
+either one:
+  (1) Defend the red lines above — never cross them.
+  (2) Help the group reach a basin-wide agreement that closes the shortfall.
+Your opening allocation, conservation level, and shortage-sharing stance are
+NEGOTIABLE POSITIONS, not red lines. You are expected to ADJUST them across
+the rounds as others move — trade lower-priority positions to protect your
+red lines. Restating the same numbers round after round is itself a failure
+of your mandate: deadlock forces uncontrolled shortage and litigation, which
+leaves your own constituents worse off than a negotiated cut. When another
+party makes a real concession, acknowledge it and reciprocate. (If you are a
+non-consumptive actor, you &quot;move&quot; by adjusting your conservation and
+shortage-sharing stance and offering operational flexibility — never by
+claiming water.) Do all of this while staying fully in character.
+
+─── RULES ────────────────────────────────────────────────────────
+1. Stay fully in character as {m[&#x27;full_name&#x27;]} at all times.
+2. Base all claims on real water law, treaty text, or court decisions.
+3. Never fabricate legal citations or quantitative data.
+4. Non-consumptive actors: keep proposed_allocation_maf at 0.0.
+5. Treat your opening numbers as a starting position: move incrementally
+   toward feasibility each round when others reciprocate — but never past a
+   red line. If the shortfall shrinks, lock in that progress; don&#x27;t re-open it.
+
+─── RESPONSE FORMAT ──────────────────────────────────────────────
+Respond ONLY with a valid JSON object — no preamble, no markdown:
+
+{{
+  &quot;state&quot;: &quot;{self.name}&quot;,
+  &quot;proposed_allocation_maf&quot;: &lt;float&gt;,
+  &quot;conservation_commitment_pct&quot;: &lt;float 0–50&gt;,
+  &quot;shortage_sharing_position&quot;: &quot;&lt;refuse|reluctant|moderate|willing|champion&gt;&quot;,
+  &quot;key_demand&quot;: &quot;&lt;one sentence&gt;&quot;,
+  &quot;concession_offered&quot;: &quot;&lt;one sentence&gt;&quot;,
+  &quot;rationale&quot;: &quot;&lt;2–3 sentences grounded in legal/factual reality&gt;&quot;
+}}&quot;&quot;&quot;
+
+    def _trim_history(self) -&gt; None:
+        &quot;&quot;&quot;
+        Slides a fixed-width window over conversation_history: the agent always
+        sees its HISTORY_WINDOW_ROUNDS most recent *past* rounds, plus the round
+        it&#x27;s answering right now. The window is relative to the current round,
+        never anchored to specific ones — at HISTORY_WINDOW_ROUNDS=3:
+
+            generating round  6  -&gt;  sees rounds  3, 4, 5
+            generating round  7  -&gt;  sees rounds  4, 5, 6
+            generating round 42  -&gt;  sees rounds 39, 40, 41
+            generating round 100 -&gt;  sees rounds 97, 98, 99
+
+        Why bound it at all: every round appends a (user, assistant) pair, and
+        from round 2 on each user message embeds all 12 other agents&#x27; proposals
+        — roughly 1.2k tokens per round. Left to grow, the prompt crosses the
+        server&#x27;s --max-model-len (8192) at ~round 6-7 and every later call fails
+        with a 400 &quot;maximum context length exceeded&quot;. With NUM_ROUNDS_PER_SIM at
+        100, no context size fixes this on its own; a bigger window only moves
+        the wall. A sliding window makes cost per round constant, so round 100
+        is exactly as affordable as round 6.
+
+        What is NOT lost: every other agent&#x27;s *current* proposals are rebuilt
+        into each round&#x27;s live user message (sent for that call only, never
+        stored), so the agent always sees the full live negotiation state. Only
+        a compact record of its OWN past rounds lives in history — the bulky
+        12-peer table is never replayed, which is what keeps cost per round flat.
+
+        Each stored round is a (memory-note user, compact-reply assistant) pair
+        = 2 messages. We keep the most recent HISTORY_WINDOW_ROUNDS pairs, then
+        ensure the window opens on a `user` message so the chat API sees strict
+        user/assistant alternation after the system prompt.
+        &quot;&quot;&quot;
+        max_messages = max(2, HISTORY_WINDOW_ROUNDS * 2)
+        if len(self.conversation_history) &gt; max_messages:
+            self.conversation_history = self.conversation_history[-max_messages:]
+        # Guarantee the window opens on a user turn (a leading assistant message
+        # right after the system prompt is invalid/odd for the chat template).
+        if self.conversation_history and self.conversation_history[0].get(&quot;role&quot;) != &quot;user&quot;:
+            self.conversation_history = self.conversation_history[1:]
+
+    def get_state(self) -&gt; dict:
+        &quot;&quot;&quot;Serialises this agent&#x27;s memory for checkpointing (see checkpoint.py).&quot;&quot;&quot;
+        return {
+            &quot;conversation_history&quot;: self.conversation_history,
+            &quot;proposal_history&quot;:     self.proposal_history,
+        }
+
+    def load_state(self, state: dict) -&gt; None:
+        &quot;&quot;&quot;Restores memory saved by get_state(), so a resumed agent keeps its context.&quot;&quot;&quot;
+        self.conversation_history = state.get(&quot;conversation_history&quot;, [])
+        self.proposal_history     = state.get(&quot;proposal_history&quot;, [])
+
+    @staticmethod
+    def _clip(text, limit: int = 160) -&gt; str:
+        &quot;&quot;&quot;
+        Caps a free-text field so the running prompt can&#x27;t grow unbounded. The
+        sliding history window bounds the NUMBER of remembered rounds, but each
+        round embeds 12 peers&#x27; text fields (and stores this agent&#x27;s own reply);
+        as agents negotiate, that prose grows and eventually blows past the
+        server&#x27;s --max-model-len. Clipping each field keeps per-round cost flat.
+        &quot;&quot;&quot;
+        s = &quot;&quot; if text is None else str(text)
+        return s if len(s) &lt;= limit else s[: limit - 1].rstrip() + &quot;…&quot;
+
+    def _build_pressure_text(self, round_number: int, basin_context: dict | None) -&gt; str:
+        &quot;&quot;&quot;
+        Turns the live basin numbers into an in-prompt scarcity + deadline signal.
+        This is the forcing function that makes agents actually converge: they can
+        see the shortfall they must collectively close, and the round it&#x27;s due.
+        Returns &quot;&quot; when no context is available (keeps behavior safe/optional).
+        &quot;&quot;&quot;
+        if not basin_context:
+            return &quot;&quot;
+
+        supply       = basin_context.get(&quot;supply_maf&quot;)
+        total_rounds = basin_context.get(&quot;total_rounds&quot;)
+        claimed      = basin_context.get(&quot;last_claimed_maf&quot;)
+        deficit      = basin_context.get(&quot;last_deficit_maf&quot;)
+
+        # Round 1 (or no prior totals yet): frame the scarcity up front.
+        if claimed is None or deficit is None:
+            if supply is None:
+                return &quot;&quot;
+            return (
+                f&quot;\n\nSCARCITY CONTEXT — The seven basin states can realistically expect &quot;
+                f&quot;only about {supply:.2f} MAF this year, far below the 15.0 MAF paper &quot;
+                f&quot;compact total. A durable agreement will require shared cuts, so state &quot;
+                f&quot;an opening position you can actually move from.&quot;
+            )
+
+        rounds_left = None
+        if total_rounds is not None:
+            rounds_left = max(0, total_rounds - round_number)
+
+        deadline = f&quot;This is round {round_number}&quot;
+        if total_rounds is not None:
+            deadline += f&quot; of {total_rounds}&quot;
+            if rounds_left is not None:
+                deadline += f&quot; — {rounds_left} round(s) left to close the gap&quot;
+        deadline += &quot;.&quot;
+
+        if deficit &gt; 0.05:
+            return (
+                f&quot;\nSCARCITY CHECK — Last round the seven basin states together claimed &quot;
+                f&quot;{claimed:.2f} MAF, but only about {supply:.2f} MAF is physically &quot;
+                f&quot;available: a shortfall of {deficit:.2f} MAF the group MUST close. &quot;
+                f&quot;{deadline} If the gap is not closed by the final round, every party &quot;
+                f&quot;defaults to uncontrolled shortage and litigation — worse for you than &quot;
+                f&quot;a negotiated cut. Move a negotiable position toward closing it this &quot;
+                f&quot;round without crossing your red lines.&quot;
+            )
+        # Gap effectively closed — hold the feasible deal, don&#x27;t re-open it.
+        return (
+            f&quot;\nSCARCITY CHECK — Last round total state claims were {claimed:.2f} MAF &quot;
+            f&quot;against {supply:.2f} MAF available: the shortfall is essentially closed. &quot;
+            f&quot;{deadline} Lock in this progress and hold a feasible agreement rather than &quot;
+            f&quot;re-opening demands.&quot;
+        )
+
+    def _exhaustion_note(self) -&gt; str:
+        &quot;&quot;&quot;
+        If this agent has already exhausted its concession levers (it is sitting at
+        the 50% conservation cap), tell it to HOLD. Otherwise the convergence
+        pressure keeps nudging it to conserve *more*, it re-reads its own capped
+        value and bumps it past 50%, and the checker clamps it again — a runaway
+        ratchet (55→60→65…) with no brake. This stops the overshoot at the source.
+        &quot;&quot;&quot;
+        if not self.proposal_history:
+            return &quot;&quot;
+        prev      = self.proposal_history[-1][&quot;proposal&quot;]
+        prev_cons = float(prev.get(&quot;conservation_commitment_pct&quot;, 0) or 0)
+        if prev_cons &gt;= 49.5:
+            return (
+                &quot;\nLIMIT REACHED — You are already at the maximum implementable &quot;
+                &quot;conservation of 50%. Do NOT raise conservation above 50% (it will be &quot;
+                &quot;rejected). You have exhausted this lever; hold your position and rely &quot;
+                &quot;on reciprocal moves from others rather than offering more yourself.&quot;
+            )
+        return &quot;&quot;
+
+    def _compute_conviction(self, allocation: float, conservation: float) -&gt; float:
+        &quot;&quot;&quot;
+        Derived 0–1 rigidity/conviction signal, computed from OBSERVABLE behaviour
+        only — never self-reported by the model (LLM self-confidence is uncalibrated).
+
+          high  → sitting at a hard limit and not moving (a wall)
+          low   → actively flexing round-over-round (a dealmaker)
+
+        Ingredients: how much of its legal entitlement it is still claiming, and how
+        little it moved since last round (allocation + conservation deltas).
+        &quot;&quot;&quot;
+        conservation = max(0.0, min(float(conservation), 50.0))
+        prev = self.proposal_history[-1][&quot;proposal&quot;] if self.proposal_history else None
+
+        if prev is not None:
+            prev_alloc = float(prev.get(&quot;proposed_allocation_maf&quot;, allocation))
+            prev_cons  = max(0.0, min(float(prev.get(&quot;conservation_commitment_pct&quot;, conservation) or 0), 50.0))
+            alloc_delta = abs(allocation - prev_alloc) / self.ceiling if self.ceiling &gt; 0 else 0.0
+            cons_delta  = abs(conservation - prev_cons) / 50.0
+            stillness   = 1.0 - min(alloc_delta + cons_delta, 1.0)
+        else:
+            stillness = 0.5   # round 1 — no prior move to measure; neutral
+
+        if self.ceiling &gt; 0:
+            holding    = min(allocation / self.ceiling, 1.0)   # share of entitlement still claimed
+            conviction = 0.5 * holding + 0.5 * stillness
+        else:
+            # Non-consumptive actors (BOR, Environmental) hold via posture, not water.
+            conviction = stillness
+
+        return round(max(0.0, min(conviction, 1.0)), 3)
+
+    def generate_proposal(
+        self,
+        round_number: int,
+        other_proposals: list[dict],
+        basin_context: dict | None = None,
+    ) -&gt; dict:
+        &quot;&quot;&quot;
+        Calls GPT to generate a negotiation proposal for this round.
+
+        Round 1 : Opening position — no prior context.
+        Round 2+: Sees all other proposals and responds/adjusts.
+
+        basin_context (optional) carries the live scarcity signal so agents
+        actually negotiate instead of restating positions:
+            supply_maf       — water realistically available to the states
+            total_rounds     — deadline (agreement must close by this round)
+            last_claimed_maf — previous round&#x27;s summed state claims (None in R1)
+            last_deficit_maf — previous round&#x27;s shortfall vs supply (None in R1)
+        &quot;&quot;&quot;
+        pressure_text = self._build_pressure_text(round_number, basin_context)
+        pressure_text += self._exhaustion_note()
+
+        # A one-time correction if the moderator clamped our last proposal.
+        feedback = self.pending_feedback
+        feedback_block = f&quot;{feedback}\n\n&quot; if feedback else &quot;&quot;
+
+        if round_number == 1:
+            live_message = (
+                f&quot;{feedback_block}&quot;
+                f&quot;Round {round_number} — Opening positions.\n&quot;
+                f&quot;State your opening position as {self.mandate[&#x27;full_name&#x27;]}. &quot;
+                &quot;What is your primary demand? What will you fight hardest to protect?&quot;
+                + pressure_text
+            )
+        else:
+            other_text = json.dumps(
+                [
+                    {
+                        &quot;stakeholder&quot;:                p.get(&quot;state&quot;),
+                        &quot;proposed_allocation_maf&quot;:    p.get(&quot;proposed_allocation_maf&quot;),
+                        &quot;conservation_commitment_pct&quot;: p.get(&quot;conservation_commitment_pct&quot;),
+                        &quot;shortage_sharing_position&quot;:  p.get(&quot;shortage_sharing_position&quot;),
+                        &quot;key_demand&quot;:                 self._clip(p.get(&quot;key_demand&quot;)),
+                        &quot;concession_offered&quot;:         self._clip(p.get(&quot;concession_offered&quot;)),
+                    }
+                    for p in other_proposals
+                ],
+                indent=2,
+            )
+            live_message = (
+                f&quot;{feedback_block}&quot;
+                f&quot;Round {round_number} — Responding to all stakeholders.\n\n&quot;
+                f&quot;All proposals on the table:\n{other_text}\n&quot;
+                f&quot;{pressure_text}\n&quot;
+                &quot;How do you respond? Which positions align with yours? Which threaten &quot;
+                &quot;your red lines? What position can you MOVE this round to help close the &quot;
+                &quot;shortfall — and what do you ask for in return?&quot;
+            )
+
+        # Two separate channels, deliberately kept apart so context can&#x27;t grow:
+        #   • live_message  — the FULL current table + pressure. Sent for THIS
+        #     call only; never stored, so the bulky 12-peer table is not replayed
+        #     every future round (that was blowing past --max-model-len).
+        #   • memory_note   — a tiny placeholder stored in history to preserve
+        #     user/assistant alternation. The agent&#x27;s own trajectory is carried
+        #     by its compact assistant replies; the current state of everyone
+        #     else is always re-injected fresh via live_message.
+        memory_note = f&quot;[Round {round_number}] Reviewed the table and responded.&quot;
+
+        # ── NEURAL: GPT generates the proposal ───────────────────────────────
+        response = _get_client().chat.completions.create(
+            model=_active_model,
+            messages=[
+                {&quot;role&quot;: &quot;system&quot;, &quot;content&quot;: self._build_system_prompt()},
+                *self.conversation_history,
+                {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: live_message},
+            ],
+            max_tokens=MAX_TOKENS_PER_CALL,
+            temperature=0.7,
+            response_format={&quot;type&quot;: &quot;json_object&quot;},
+        )
+
+        raw_text = response.choices[0].message.content
+        self.last_raw_generation = raw_text or &quot;&quot;
+
+        try:
+            proposal = json.loads(raw_text)
+        except json.JSONDecodeError:
+            print(f&quot;  [WARNING] JSON parse error for {self.name} — using safe fallback.&quot;)
+            proposal = {
+                &quot;state&quot;:                       self.name,
+                &quot;proposed_allocation_maf&quot;:     self.ceiling,
+                &quot;conservation_commitment_pct&quot;: 10,
+                &quot;shortage_sharing_position&quot;:   &quot;moderate&quot;,
+                &quot;key_demand&quot;:                  f&quot;Protect {self.mandate[&#x27;full_name&#x27;]} legal authority.&quot;,
+                &quot;concession_offered&quot;:          &quot;Open to collaborative framework discussions.&quot;,
+                &quot;rationale&quot;:                   &quot;Safe fallback due to JSON parse error.&quot;,
+                &quot;_parse_error&quot;:                True,
+            }
+
+        proposal[&quot;state&quot;] = self.name   # Enforce correct identifier
+
+        # Derived conviction (0–1) from observable behaviour — attached to the
+        # proposal so the analysis layer can aggregate it across runs into the
+        # rigidity map / confidence bands (see zopa_analyzer.py). Computed BEFORE
+        # this round is appended to proposal_history, so it compares against the
+        # previous round&#x27;s values.
+        proposal[&quot;conviction&quot;] = self._compute_conviction(
+            float(proposal.get(&quot;proposed_allocation_maf&quot;, 0) or 0),
+            float(proposal.get(&quot;conservation_commitment_pct&quot;, 0) or 0),
+        )
+
+        # Store a COMPACT reply in the LLM context (drop the verbose rationale,
+        # clip text fields) so memory stays bounded round-over-round. The full
+        # proposal is still kept in proposal_history (checkpoint/results) and the
+        # full raw text in last_raw_generation (verbatim transcript log), so
+        # nothing is lost from the outputs — only the replayed context shrinks.
+        compact_reply = json.dumps({
+            &quot;proposed_allocation_maf&quot;:     proposal.get(&quot;proposed_allocation_maf&quot;),
+            &quot;conservation_commitment_pct&quot;: proposal.get(&quot;conservation_commitment_pct&quot;),
+            &quot;shortage_sharing_position&quot;:   proposal.get(&quot;shortage_sharing_position&quot;),
+            &quot;key_demand&quot;:                  self._clip(proposal.get(&quot;key_demand&quot;)),
+            &quot;concession_offered&quot;:          self._clip(proposal.get(&quot;concession_offered&quot;)),
+            &quot;conviction&quot;:                  proposal.get(&quot;conviction&quot;),
+        })
+        self.conversation_history.append({&quot;role&quot;: &quot;user&quot;,      &quot;content&quot;: memory_note})
+        self.conversation_history.append({&quot;role&quot;: &quot;assistant&quot;, &quot;content&quot;: compact_reply})
+        self._trim_history()
+
+        # Correction (if any) has now been delivered — clear it so it fires once.
+        self.pending_feedback = &quot;&quot;
+
+        self.proposal_history.append({&quot;round&quot;: round_number, &quot;proposal&quot;: proposal})
+        return proposal
+
+    def note_constraint_correction(self, round_number: int, corrections: list[dict]) -&gt; None:
+        &quot;&quot;&quot;
+        Called by the moderator when one or more of this agent&#x27;s proposal fields
+        were clamped for breaching a hard limit (allocation ceiling, conservation
+        cap, …). Does two things per field so the agent SELF-CORRECTS next round
+        instead of re-anchoring on — and ratcheting up — the rejected number:
+          1. Queues a plain correction note for the next prompt.
+          2. Rewrites its most recent stored reply to the clamped (legal) values,
+             so its own memory shows the corrected numbers, not the illegal ones.
+
+        Each entry in `corrections` is a dict with:
+          field, original, clamped, unit (&quot;MAF&quot;|&quot;%&quot;), noun, limit_word.
+        &quot;&quot;&quot;
+        if not corrections:
+            return
+
+        lines = []
+        for c in corrections:
+            lines.append(
+                f&quot;Your round {round_number} {c[&#x27;noun&#x27;]} of &quot;
+                f&quot;{float(c[&#x27;original&#x27;]):.3f}{c[&#x27;unit&#x27;]} breached your legal &quot;
+                f&quot;{c[&#x27;limit_word&#x27;]} of {float(c[&#x27;clamped&#x27;]):.3f}{c[&#x27;unit&#x27;]} and was &quot;
+                f&quot;automatically clamped to {float(c[&#x27;clamped&#x27;]):.3f}{c[&#x27;unit&#x27;]}. &quot;
+                f&quot;Do not exceed {float(c[&#x27;clamped&#x27;]):.3f}{c[&#x27;unit&#x27;]} again.&quot;
+            )
+        self.pending_feedback = &quot;CORRECTION — &quot; + &quot;  &quot;.join(lines)
+
+        # Rewrite the most recent stored assistant reply so memory shows the
+        # legal values (all clamped fields at once, in a single scan).
+        for msg in reversed(self.conversation_history):
+            if msg.get(&quot;role&quot;) == &quot;assistant&quot;:
+                try:
+                    d = json.loads(msg[&quot;content&quot;])
+                    for c in corrections:
+                        if c[&quot;field&quot;] in d:
+                            d[c[&quot;field&quot;]] = round(float(c[&quot;clamped&quot;]), 3)
+                    msg[&quot;content&quot;] = json.dumps(d)
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    pass
+                break
+
+    def reset(self):
+        &quot;&quot;&quot;Clears conversation and proposal history between simulation runs.&quot;&quot;&quot;
+        self.conversation_history = []
+        self.proposal_history     = []</code></pre></details>
+<details class="mh-code"><summary><b>negotiation.py</b></summary><pre class="mh-pre"><code>&quot;&quot;&quot;
+negotiation.py — Mulholland Multiagent System
+==============================================
+NEGOTIATION ENGINE
+
+Orchestrates one complete simulation run across all 13 agents:
+
+  For each round (1 → NUM_ROUNDS_PER_SIM):
+    1. Each agent generates a proposal          ← NEURAL  (GPT)
+    2. Constraint checker validates proposal    ← SYMBOLIC (rule engine)
+    3. Violations logged; allocation clamped    ← SYMBOLIC
+    4. Basin-level feasibility checked          ← SYMBOLIC (aggregate)
+
+Agent order per round:
+  States first (7) → Federal → Tribal (2) → International → Agricultural → Environmental
+  States go first so their compact positions are visible before
+  non-state actors respond — this mirrors real negotiation dynamics.
+&quot;&quot;&quot;
+
+import json
+from agents             import NegotiationAgent, ALL_MANDATES, STATE_AGENTS
+from constraint_checker import check_proposal, check_basin_agreement
+from config             import NUM_ROUNDS_PER_SIM
+from legal_framework    import ALL_AGENT_CEILINGS_MAF, AVAILABLE_SUPPLY_MAF
+from conversation_log   import log_round_header, log_agent_turn
+
+# Ordered agent list: states first, then non-state stakeholders
+AGENT_ORDER = [
+    # Category 1: Basin states (compact actors)
+    &quot;California&quot;, &quot;Arizona&quot;, &quot;Nevada&quot;,          # Lower Basin
+    &quot;Colorado&quot;, &quot;Utah&quot;, &quot;Wyoming&quot;, &quot;New Mexico&quot;, # Upper Basin
+    # Category 2: Federal
+    &quot;Federal_BOR&quot;,
+    # Category 3: Tribal
+    &quot;Navajo_Nation&quot;, &quot;CRIT&quot;,
+    # Category 4: International
+    &quot;Mexico_IBWC&quot;,
+    # Category 5: Water users / Environmental
+    &quot;IID&quot;, &quot;Environmental_ESA&quot;,
+]
+
+
+def run_simulation(
+    simulation_id: int,
+    resume_state: dict | None = None,
+    on_round_complete=None,
+) -&gt; dict:
+    &quot;&quot;&quot;
+    Runs one complete Colorado River negotiation simulation across all 13 agents.
+
+    Args:
+        simulation_id : Integer identifier for this run (1–NUM_SIMULATIONS).
+        resume_state  : Checkpoint state from a partially-completed run of this
+                        same simulation_id (see checkpoint.py). Restores agent
+                        memory and completed rounds, then continues from the
+                        next unfinished round. None = start from round 1.
+        on_round_complete : Optional callback invoked after each round completes,
+                        as on_round_complete(simulation_id, round_num,
+                        simulation_results, agent_states). main.py uses this to
+                        write a checkpoint after every round.
+
+    Returns:
+        Dict containing rounds, final_proposals, constraint_violations,
+        warnings, and basin_feasibility snapshots.
+    &quot;&quot;&quot;
+    print(f&quot;\n{&#x27;═&#x27;*66}&quot;)
+    print(f&quot;  SIMULATION {simulation_id:&gt;2}  —  Colorado River Negotiation  (13 agents)&quot;)
+    print(f&quot;{&#x27;═&#x27;*66}&quot;)
+
+    # Initialise all 13 agents fresh — clean history, no carryover between runs
+    agents = {name: NegotiationAgent(name) for name in AGENT_ORDER}
+
+    if resume_state:
+        # Restore both halves of the state: the results accumulated so far, and
+        # each agent&#x27;s own memory. Restoring results without agent memory would
+        # silently produce agents that had &quot;forgotten&quot; the rounds the results
+        # say they participated in.
+        simulation_results = resume_state[&quot;simulation_results&quot;]
+        for name, agent_state in resume_state.get(&quot;agent_states&quot;, {}).items():
+            if name in agents:
+                agents[name].load_state(agent_state)
+        start_round = resume_state[&quot;next_round&quot;]
+        print(f&quot;  ↻ Resuming from checkpoint — rounds 1–{start_round - 1} already complete.&quot;)
+    else:
+        simulation_results = {
+            &quot;simulation_id&quot;:         simulation_id,
+            &quot;rounds&quot;:                [],
+            &quot;constraint_violations&quot;: [],
+            &quot;warnings&quot;:              [],
+            &quot;basin_feasibility&quot;:     [],
+            &quot;final_proposals&quot;:       {},
+        }
+        start_round = 1
+
+    # Previous round&#x27;s basin totals — the live scarcity signal fed into each
+    # agent&#x27;s prompt so they negotiate toward closing the shortfall. On a resumed
+    # run, seed it from the last completed round so pressure carries over.
+    prev_basin = (
+        simulation_results[&quot;basin_feasibility&quot;][-1]
+        if simulation_results[&quot;basin_feasibility&quot;]
+        else None
+    )
+
+    for round_num in range(start_round, NUM_ROUNDS_PER_SIM + 1):
+        label = &quot;(Opening positions)&quot; if round_num == 1 else &quot;(Response &amp; adjustment)&quot;
+        print(f&quot;\n  ── Round {round_num} of {NUM_ROUNDS_PER_SIM} {label} ──&quot;)
+
+        # Scarcity/deadline context handed to every agent this round.
+        basin_context = {
+            &quot;supply_maf&quot;:       AVAILABLE_SUPPLY_MAF,
+            &quot;total_rounds&quot;:     NUM_ROUNDS_PER_SIM,
+            &quot;last_claimed_maf&quot;: prev_basin[&quot;grand_total_maf&quot;] if prev_basin else None,
+            &quot;last_deficit_maf&quot;: (
+                round(prev_basin[&quot;grand_total_maf&quot;] - AVAILABLE_SUPPLY_MAF, 3)
+                if prev_basin else None
+            ),
+        }
+
+        # Live transcript: banner for this round (see conversation_log.py)
+        log_round_header(simulation_id, round_num, label)
+
+        round_proposals  = []
+        round_violations = []
+
+        for agent_name, agent in agents.items():
+
+            # Agent type label for console readability
+            atype = agent.mandate[&quot;agent_type&quot;].upper()[:4]
+            print(f&quot;    [{atype}] {agent_name:&lt;20} → generating...&quot;, end=&quot; &quot;, flush=True)
+
+            # ── NEURAL: GPT generates the proposal ──────────────────────────
+            proposal = agent.generate_proposal(
+                round_number    = round_num,
+                other_proposals = round_proposals,  # All prior proposals visible
+                basin_context   = basin_context,    # Live scarcity + deadline signal
+            )
+
+            # Applicable ceiling for this agent
+            ceiling = ALL_AGENT_CEILINGS_MAF.get(agent_name, 0.0)
+
+            # ── SYMBOLIC: Constraint checker validates ───────────────────────
+            validation = check_proposal(proposal, round_proposals)
+
+            if validation[&quot;valid&quot;]:
+                alloc = proposal.get(&quot;proposed_allocation_maf&quot;, 0)
+                print(
+                    f&quot;✓  {alloc:.3f} MAF  |  &quot;
+                    f&quot;conservation: {proposal.get(&#x27;conservation_commitment_pct&#x27;, 0):.0f}%  |  &quot;
+                    f&quot;shortage: {proposal.get(&#x27;shortage_sharing_position&#x27;, &#x27;n/a&#x27;)}&quot;
+                )
+            else:
+                print(f&quot;✗  VIOLATION — clamping to {ceiling:.3f} MAF&quot;)
+                for v in validation[&quot;violations&quot;]:
+                    print(f&quot;           ⚠  {v}&quot;)
+                    round_violations.append({
+                        &quot;agent&quot;: agent_name,
+                        &quot;round&quot;: round_num,
+                        &quot;violation&quot;: v,
+                    })
+                # Clamp every out-of-range field before accepting. Allocation is
+                # capped at the legal ceiling; conservation is capped to 0–50%
+                # (the implementable range enforced in constraint_checker.py).
+                original_alloc = float(proposal.get(&quot;proposed_allocation_maf&quot;, ceiling))
+                original_cons  = float(proposal.get(&quot;conservation_commitment_pct&quot;, 0))
+                clamped_cons   = max(0.0, min(original_cons, 50.0))
+                proposal[&quot;proposed_allocation_maf&quot;]     = min(original_alloc, ceiling)
+                proposal[&quot;conservation_commitment_pct&quot;] = clamped_cons
+                proposal[&quot;_constraint_clamped&quot;] = True
+
+                # Build the list of corrections to feed back so the agent
+                # self-corrects next round instead of re-anchoring on — and
+                # ratcheting up — the same illegal number.
+                corrections = []
+                if original_alloc &gt; ceiling:
+                    corrections.append({
+                        &quot;field&quot;: &quot;proposed_allocation_maf&quot;,
+                        &quot;original&quot;: original_alloc, &quot;clamped&quot;: round(ceiling, 3),
+                        &quot;unit&quot;: &quot;MAF&quot;, &quot;noun&quot;: &quot;allocation&quot;, &quot;limit_word&quot;: &quot;ceiling&quot;,
+                    })
+                if not (0 &lt;= original_cons &lt;= 50):
+                    corrections.append({
+                        &quot;field&quot;: &quot;conservation_commitment_pct&quot;,
+                        &quot;original&quot;: original_cons, &quot;clamped&quot;: clamped_cons,
+                        &quot;unit&quot;: &quot;%&quot;, &quot;noun&quot;: &quot;conservation commitment&quot;, &quot;limit_word&quot;: &quot;cap&quot;,
+                    })
+                if corrections:
+                    agent.note_constraint_correction(round_num, corrections)
+
+            # Log non-blocking warnings
+            for w in validation[&quot;warnings&quot;]:
+                print(f&quot;           ℹ  {w}&quot;)
+                simulation_results[&quot;warnings&quot;].append({
+                    &quot;agent&quot;: agent_name, &quot;round&quot;: round_num, &quot;warning&quot;: w
+                })
+
+            # Live transcript: archive this agent&#x27;s exact generated output plus
+            # the constraint verdict, verbatim (see conversation_log.py).
+            log_agent_turn(
+                simulation_id  = simulation_id,
+                round_number   = round_num,
+                agent_name     = agent_name,
+                agent_type     = agent.mandate[&quot;agent_type&quot;],
+                raw_generation = agent.last_raw_generation,
+                validation     = validation,
+            )
+
+            round_proposals.append(proposal)
+
+        # ── SYMBOLIC: Basin-level aggregate feasibility check ─────────────────
+        basin_check          = check_basin_agreement(round_proposals)
+        basin_check[&quot;round&quot;] = round_num
+        simulation_results[&quot;basin_feasibility&quot;].append(basin_check)
+        prev_basin           = basin_check   # feed this round&#x27;s totals into the next
+
+        feasible_flag = &quot;✓&quot; if basin_check[&quot;system_feasible&quot;] else &quot;✗&quot;
+        deficit_maf   = round(basin_check[&quot;grand_total_maf&quot;] - AVAILABLE_SUPPLY_MAF, 3)
+        gap_flag      = &quot;GAP CLOSED ✓&quot; if deficit_maf &lt;= 0.05 else f&quot;shortfall {deficit_maf:+.3f} MAF ✗&quot;
+        print(
+            f&quot;\n  Basin (compact states only) — &quot;
+            f&quot;Upper: {basin_check[&#x27;upper_basin_total_maf&#x27;]} MAF  |  &quot;
+            f&quot;Lower: {basin_check[&#x27;lower_basin_total_maf&#x27;]} MAF  |  &quot;
+            f&quot;Grand: {basin_check[&#x27;grand_total_maf&#x27;]} MAF  {feasible_flag}&quot;
+        )
+        print(
+            f&quot;  Scarcity — claimed {basin_check[&#x27;grand_total_maf&#x27;]} MAF vs &quot;
+            f&quot;available {AVAILABLE_SUPPLY_MAF} MAF  →  {gap_flag}&quot;
+        )
+
+        simulation_results[&quot;rounds&quot;].append({
+            &quot;round_number&quot;: round_num,
+            &quot;proposals&quot;:    round_proposals,
+            &quot;violations&quot;:   round_violations,
+            &quot;basin_check&quot;:  basin_check,
+        })
+        simulation_results[&quot;constraint_violations&quot;].extend(round_violations)
+
+        # Persist progress. Done at round granularity (not per-agent) because a
+        # round is the natural consistent unit — every agent has spoken and the
+        # basin check has run, so a resumed run never starts mid-round with a
+        # half-populated round_proposals list.
+        if on_round_complete:
+            on_round_complete(
+                simulation_id,
+                round_num,
+                simulation_results,
+                {name: agent.get_state() for name, agent in agents.items()},
+            )
+
+    # Final proposals = last round proposals keyed by agent name
+    last_round = simulation_results[&quot;rounds&quot;][-1][&quot;proposals&quot;]
+    simulation_results[&quot;final_proposals&quot;] = {p[&quot;state&quot;]: p for p in last_round}
+
+    print(f&quot;\n  Final allocations (Round {NUM_ROUNDS_PER_SIM}):&quot;)
+    for name, proposal in simulation_results[&quot;final_proposals&quot;].items():
+        atype = ALL_MANDATES[name][&quot;agent_type&quot;].upper()[:4]
+        print(
+            f&quot;    [{atype}] {name:&lt;20}: &quot;
+            f&quot;{proposal.get(&#x27;proposed_allocation_maf&#x27;, 0):.3f} MAF&quot;
+            f&quot;  — {proposal.get(&#x27;key_demand&#x27;, &#x27;&#x27;)[:55]}&quot;
+        )
+
+    violations_count = len(simulation_results[&quot;constraint_violations&quot;])
+    print(f&quot;\n  Simulation {simulation_id} complete. Violations caught: {violations_count}&quot;)
+
+    return simulation_results</code></pre></details>
+<details class="mh-code"><summary><b>legal_framework.py</b></summary><pre class="mh-pre"><code>&quot;&quot;&quot;
+legal_framework.py — Mulholland Multiagent System
+===================================================
+THE SYMBOLIC LAYER — Part 1: Legal Rules
+
+This module encodes the HARD LEGAL RULES of the Colorado River framework
+as plain Python constants. These are NOT generated by an LLM — they are
+deterministic, authoritative, and sourced directly from legal documents.
+
+The symbolic constraint checker (constraint_checker.py) imports these
+to validate every LLM-generated proposal before it enters the simulation.
+No agent can negotiate around these; they are structural facts.
+
+Key sources encoded here:
+  • Colorado River Compact of 1922
+  • Boulder Canyon Project Act of 1928
+  • Upper Colorado River Basin Compact of 1948
+  • Mexican Water Treaty of 1944
+  • 2007 Interim Guidelines + 2019 Drought Contingency Plan (DCP)
+  • Arizona v. California Supreme Court decrees (1963–2006)
+&quot;&quot;&quot;
+
+# ── Compact Allocations (MAF = Million Acre-Feet per year) ───────────────────
+#
+# Upper Basin states divide 7.5 MAF via percentage shares (1948 Compact).
+# Lower Basin states have fixed allocations (Boulder Canyon Project Act 1928).
+#
+LEGAL_ENTITLEMENTS_MAF = {
+    # Upper Basin — percentage of 7.5 MAF
+    &quot;Wyoming&quot;:    round(7.5 * 0.1400, 4),   # 14.00%  →  1.0500 MAF
+    &quot;Colorado&quot;:   round(7.5 * 0.5175, 4),   # 51.75%  →  3.8813 MAF
+    &quot;Utah&quot;:       round(7.5 * 0.2300, 4),   # 23.00%  →  1.7250 MAF
+    &quot;New Mexico&quot;: round(7.5 * 0.1125, 4),   # 11.25%  →  0.8438 MAF
+
+    # Lower Basin — fixed by Boulder Canyon Project Act
+    &quot;California&quot;: 4.4,    # Senior agricultural priority (Imperial, Coachella, Palo Verde)
+    &quot;Arizona&quot;:    2.8,    # Junior CAP priority; first-tier shortage exposure
+    &quot;Nevada&quot;:     0.3,    # Smallest allocation; 90% recycling in Las Vegas
+}
+
+# ── Basin Groupings ───────────────────────────────────────────────────────────
+UPPER_BASIN_STATES = [&quot;Wyoming&quot;, &quot;Colorado&quot;, &quot;Utah&quot;, &quot;New Mexico&quot;]
+LOWER_BASIN_STATES = [&quot;California&quot;, &quot;Arizona&quot;, &quot;Nevada&quot;]
+
+# Each basin&#x27;s compact ceiling
+UPPER_BASIN_TOTAL_MAF = 7.5   # Colorado River Compact 1922
+LOWER_BASIN_TOTAL_MAF = 7.5   # Colorado River Compact 1922
+
+# Actual water realistically deliverable to the seven basin states in a
+# current, sustained-drought year — the &quot;structural deficit&quot; premise of the
+# whole project. The 1922 compact hands the states 15.0 MAF on paper
+# (7.5 + 7.5), but the river no longer carries that. This lower figure is the
+# scarcity signal the agents negotiate against: opening claims that sum near
+# 15.0 leave a shortfall that MUST be closed through shared cuts. Tune per
+# scenario (a severe-drought scenario would lower this further).
+AVAILABLE_SUPPLY_MAF = 13.0
+
+# Lee Ferry delivery obligation:
+# Upper Basin must deliver 75 MAF to Lower Basin over any 10-year rolling period.
+# This is the single most important interstate obligation in the compact.
+LEE_FERRY_OBLIGATION_10YR_MAF = 75.0
+
+# ── Mexico Treaty Obligations ─────────────────────────────────────────────────
+# Source: Mexican Water Treaty of 1944; Minute 323 shortage protocols
+MEXICO_TREATY_NORMAL_MAF   = 1.5   # Annual delivery under normal conditions
+MEXICO_TREATY_SHORTAGE_MAF = 1.4   # Minimum during declared shortage (Minute 323)
+
+# ── Lake Mead Shortage Tiers ──────────────────────────────────────────────────
+# Source: 2007 Interim Guidelines + 2019 Drought Contingency Plan (DCP)
+# Elevation measured in feet above sea level at Hoover Dam gauge.
+#
+# When Lake Mead falls below a tier threshold, mandatory reductions apply.
+# Arizona and Nevada bear the first cuts (junior priority).
+SHORTAGE_TIERS = {
+    &quot;Tier_0&quot;:  {
+        &quot;elevation_threshold_ft&quot;: 1075,
+        &quot;reduction_af&quot;: 0,
+        &quot;note&quot;: &quot;Normal operations — no mandatory cuts&quot;
+    },
+    &quot;Tier_1&quot;:  {
+        &quot;elevation_threshold_ft&quot;: 1050,
+        &quot;reduction_af&quot;: 592_000,
+        &quot;note&quot;: &quot;Arizona −512k AF, Nevada −21k AF, Mexico −8k AF&quot;
+    },
+    &quot;Tier_2&quot;:  {
+        &quot;elevation_threshold_ft&quot;: 1025,
+        &quot;reduction_af&quot;: 640_000,
+        &quot;note&quot;: &quot;Deeper Arizona/Nevada cuts&quot;
+    },
+    &quot;Tier_2a&quot;: {
+        &quot;elevation_threshold_ft&quot;: 1025,
+        &quot;reduction_af&quot;: 640_000,
+        &quot;note&quot;: &quot;Mexico included in shortage sharing&quot;
+    },
+    &quot;Tier_3&quot;:  {
+        &quot;elevation_threshold_ft&quot;: 895,
+        &quot;reduction_af&quot;: 720_000,
+        &quot;note&quot;: &quot;Critical shortage — all Lower Basin entities cut&quot;
+    },
+}
+
+# ── Reservoir Critical Thresholds ────────────────────────────────────────────
+# Source: Drought Response Operations Agreement (DROA)
+LAKE_POWELL_MIN_POWER_POOL_FT = 3525   # Below → hydropower generation ceases
+LAKE_POWELL_MIN_POOL_FT       = 3490   # Absolute minimum operational elevation
+LAKE_MEAD_DEAD_POOL_FT        = 895    # Below → water physically cannot be released
+
+# ── Non-State Agent Allocation Ceilings ──────────────────────────────────────
+# For agents whose authority is treaty-based, rights-based, or operational
+# rather than compact-apportionment-based.
+# 0.0 = non-consumptive actor (manages/enforces flows but does not claim water)
+NON_STATE_CEILINGS_MAF = {
+    &quot;Federal_BOR&quot;:       0.0,    # Administers river; does not claim allocation
+    &quot;Navajo_Nation&quot;:     2.0,    # Estimated upper bound from legal analyses;
+                                 # actual quantification unresolved in litigation
+    &quot;CRIT&quot;:              0.717,  # Quantified via Arizona v. California decree
+    &quot;Mexico_IBWC&quot;:       1.5,    # Mexican Water Treaty of 1944 (normal conditions)
+    &quot;IID&quot;:               3.1,    # Senior CA agricultural priority (Boulder Canyon Act)
+    &quot;Environmental_ESA&quot;: 0.0,    # Non-consumptive; advocates in-stream flows
+}
+
+# ── Unified Ceiling Lookup — Used by constraint_checker.py ───────────────────
+# Single dict covering all 13 agents: 7 compact states + 6 non-state actors.
+# constraint_checker.py imports this to validate every proposal in one place.
+ALL_AGENT_CEILINGS_MAF = {**LEGAL_ENTITLEMENTS_MAF, **NON_STATE_CEILINGS_MAF}</code></pre></details>
+<details class="mh-code"><summary><b>constraint_checker.py</b></summary><pre class="mh-pre"><code>&quot;&quot;&quot;
+constraint_checker.py — Mulholland Multiagent System
+=====================================================
+THE SYMBOLIC LAYER — Part 2: Constraint Validator
+
+Validates every LLM-generated proposal before it enters the simulation.
+
+  LLM proposes  →  constraint_checker validates  →  accept / clamp + log
+
+Works for all 13 agents:
+  - State agents    : checked against compact entitlements (legal_framework.py)
+  - Non-state agents: checked against treaty/rights ceilings (NON_STATE_CEILINGS_MAF)
+  - Non-consumptive : BOR and Environmental always get 0.0 — skip allocation check
+
+This deterministic gate is what makes the system neurosymbolic: no matter
+how persuasive the LLM is, it cannot hallucinate past a hard numeric constraint.
+&quot;&quot;&quot;
+
+from legal_framework import (
+    ALL_AGENT_CEILINGS_MAF,   # Unified ceiling for all 13 agents
+    UPPER_BASIN_STATES,
+    LOWER_BASIN_STATES,
+    UPPER_BASIN_TOTAL_MAF,
+    LOWER_BASIN_TOTAL_MAF,
+    MEXICO_TREATY_SHORTAGE_MAF,
+)
+
+# Agents that are non-consumptive — they claim 0 water, so skip allocation check
+NON_CONSUMPTIVE = {&quot;Federal_BOR&quot;, &quot;Environmental_ESA&quot;}
+
+
+def check_proposal(proposal: dict, all_current_proposals: list[dict]) -&gt; dict:
+    &quot;&quot;&quot;
+    Validates one agent&#x27;s proposal against all symbolic legal constraints.
+
+    Args:
+        proposal             : The agent&#x27;s output dict (parsed JSON from GPT).
+        all_current_proposals: All proposals already accepted this round.
+                               Used for cross-agent basin-level checks.
+    Returns:
+        valid      (bool) : True if no hard violations found.
+        violations (list) : Hard breaches — block the proposal.
+        warnings   (list) : Soft issues — logged but don&#x27;t block.
+    &quot;&quot;&quot;
+    violations = []
+    warnings   = []
+
+    agent      = proposal.get(&quot;state&quot;, &quot;Unknown&quot;)
+    allocation = float(proposal.get(&quot;proposed_allocation_maf&quot;, 0))
+
+    # ── CONSTRAINT 1: Non-consumptive agents must propose 0.0 ────────────────
+    # BOR and Environmental are legal/operational actors, not water claimants.
+    if agent in NON_CONSUMPTIVE and allocation &gt; 0.01:
+        violations.append(
+            f&quot;NON-CONSUMPTIVE VIOLATION [{agent}]: Proposed {allocation:.3f} MAF &quot;
+            f&quot;but this agent does not claim a water allocation (must be 0.0).&quot;
+        )
+        return {&quot;valid&quot;: False, &quot;violations&quot;: violations, &quot;warnings&quot;: warnings}
+
+    # ── CONSTRAINT 2: Allocation ≤ applicable ceiling ────────────────────────
+    # Uses ALL_AGENT_CEILINGS_MAF which covers both compact states and
+    # non-state actors (tribal, treaty, agricultural).
+    ceiling = ALL_AGENT_CEILINGS_MAF.get(agent, 0)
+    if agent not in NON_CONSUMPTIVE and ceiling &gt; 0:
+        if allocation &gt; ceiling * 1.05:       # 5% rounding tolerance
+            violations.append(
+                f&quot;CEILING VIOLATION [{agent}]: Proposes {allocation:.3f} MAF &quot;
+                f&quot;but ceiling is {ceiling:.3f} MAF &quot;
+                f&quot;(excess: {allocation - ceiling:.3f} MAF).&quot;
+            )
+
+    # ── CONSTRAINT 3: No negative allocations ────────────────────────────────
+    if allocation &lt; 0:
+        violations.append(
+            f&quot;INVALID [{agent}]: Negative allocation ({allocation:.3f} MAF) proposed.&quot;
+        )
+
+    # ── CONSTRAINT 4: Conservation commitment must be realistic ──────────────
+    conservation_pct = float(proposal.get(&quot;conservation_commitment_pct&quot;, 0))
+    if not (0 &lt;= conservation_pct &lt;= 50):
+        violations.append(
+            f&quot;INFEASIBLE [{agent}]: Conservation commitment {conservation_pct:.0f}% &quot;
+            f&quot;is outside implementable range (0–50%).&quot;
+        )
+
+    # ── CONSTRAINT 5: Basin-level totals (warning only — not a hard block) ───
+    # Only applies to compact basin states; non-state agents don&#x27;t count
+    # toward compact basin totals.
+    if agent in UPPER_BASIN_STATES or agent in LOWER_BASIN_STATES:
+        if all_current_proposals:
+            upper_total = sum(
+                float(p.get(&quot;proposed_allocation_maf&quot;, 0))
+                for p in all_current_proposals
+                if p.get(&quot;state&quot;) in UPPER_BASIN_STATES
+            )
+            lower_total = sum(
+                float(p.get(&quot;proposed_allocation_maf&quot;, 0))
+                for p in all_current_proposals
+                if p.get(&quot;state&quot;) in LOWER_BASIN_STATES
+            )
+            if agent in UPPER_BASIN_STATES:
+                upper_total += allocation
+            elif agent in LOWER_BASIN_STATES:
+                lower_total += allocation
+
+            if agent in UPPER_BASIN_STATES and upper_total &gt; UPPER_BASIN_TOTAL_MAF * 1.10:
+                warnings.append(
+                    f&quot;BASIN WARNING: Upper Basin running total {upper_total:.2f} MAF &quot;
+                    f&quot;exceeds compact ceiling {UPPER_BASIN_TOTAL_MAF} MAF by &gt;10%.&quot;
+                )
+            if agent in LOWER_BASIN_STATES and lower_total &gt; LOWER_BASIN_TOTAL_MAF * 1.10:
+                warnings.append(
+                    f&quot;BASIN WARNING: Lower Basin running total {lower_total:.2f} MAF &quot;
+                    f&quot;exceeds compact ceiling {LOWER_BASIN_TOTAL_MAF} MAF by &gt;10%.&quot;
+                )
+
+    # ── CONSTRAINT 6: Mexico treaty floor ────────────────────────────────────
+    # If any agent explicitly references a Mexico delivery figure, validate it.
+    mexico_alloc = proposal.get(&quot;mexico_allocation_maf&quot;)
+    if mexico_alloc is not None:
+        if float(mexico_alloc) &lt; MEXICO_TREATY_SHORTAGE_MAF:
+            violations.append(
+                f&quot;TREATY VIOLATION [{agent}]: Proposed Mexico delivery &quot;
+                f&quot;{mexico_alloc} MAF is below treaty floor &quot;
+                f&quot;{MEXICO_TREATY_SHORTAGE_MAF} MAF (Minute 323).&quot;
+            )
+
+    return {
+        &quot;valid&quot;:      len(violations) == 0,
+        &quot;violations&quot;: violations,
+        &quot;warnings&quot;:   warnings,
+    }
+
+
+def check_basin_agreement(proposals: list[dict]) -&gt; dict:
+    &quot;&quot;&quot;
+    System-level feasibility check after all agents in a round have proposed.
+
+    Only counts compact basin states toward basin totals —
+    non-state actors (tribal, federal, etc.) are excluded from compact math.
+
+    Returns basin totals and feasibility flags.
+    &quot;&quot;&quot;
+    upper_total = sum(
+        float(p.get(&quot;proposed_allocation_maf&quot;, 0))
+        for p in proposals if p.get(&quot;state&quot;) in UPPER_BASIN_STATES
+    )
+    lower_total = sum(
+        float(p.get(&quot;proposed_allocation_maf&quot;, 0))
+        for p in proposals if p.get(&quot;state&quot;) in LOWER_BASIN_STATES
+    )
+    grand_total = upper_total + lower_total
+
+    return {
+        &quot;upper_basin_total_maf&quot;:  round(upper_total, 3),
+        &quot;lower_basin_total_maf&quot;:  round(lower_total, 3),
+        &quot;grand_total_maf&quot;:        round(grand_total, 3),
+        &quot;upper_basin_feasible&quot;:   upper_total &lt;= UPPER_BASIN_TOTAL_MAF * 1.05,
+        &quot;lower_basin_feasible&quot;:   lower_total &lt;= LOWER_BASIN_TOTAL_MAF * 1.05,
+        &quot;system_feasible&quot;:        grand_total &lt;= 16.0,
+    }</code></pre></details>
+<details class="mh-code"><summary><b>zopa_analyzer.py</b></summary><pre class="mh-pre"><code>&quot;&quot;&quot;
+zopa_analyzer.py — Mulholland Multiagent System
+================================================
+ZOPA ANALYZER — Zone of Possible Agreement
+
+After all simulations complete, analyzes the full dataset to answer:
+  &quot;Where do agreements cluster — and who is blocking convergence?&quot;
+
+Three analysis sections:
+  1. ALLOCATION ZOPA   : Per-agent ranges, flexibility, concession tracking
+                         (consumptive agents only — those that claim water)
+  2. STAKEHOLDER SUMMARY: Shortage stance and key demands for all 13 agents
+  3. COALITION STABILITY: Which pairs consistently align across simulation runs
+
+Pure math and logic — no GPT involved in this module.
+&quot;&quot;&quot;
+
+import math
+import statistics
+from legal_framework import (
+    ALL_AGENT_CEILINGS_MAF,
+    UPPER_BASIN_STATES,
+    LOWER_BASIN_STATES,
+    AVAILABLE_SUPPLY_MAF,
+)
+from agents import ALL_MANDATES, CONSUMPTIVE_AGENTS, STATE_AGENTS
+from itertools import combinations
+
+# Confidence bands (std dev, 95% CI, landing confidence) are only trustworthy
+# once enough independent runs exist to show real spread. Below this, a single
+# clustered result would masquerade as 100% confidence, so we report &quot;n/a&quot;.
+MIN_RUNS_FOR_CONFIDENCE = 20
+
+
+def analyze_zopa(all_simulation_results: list[dict]) -&gt; dict:
+    &quot;&quot;&quot;
+    Full ZOPA analysis across all simulation runs.
+
+    Args:
+        all_simulation_results : List of dicts from run_simulation().
+
+    Returns dict with:
+        allocation_zopa    : Per-agent allocation ranges (consumptive agents)
+        stakeholder_summary: Shortage stances for all 13 agents
+        coalition_stability: Pair-wise alignment scores
+        system_level       : Grand totals, rigid/flexible agents, verdict
+        zopa_summary       : Human-readable console report
+    &quot;&quot;&quot;
+    # ── Section 1: Allocation ZOPA (consumptive agents only) ─────────────────
+    allocation_zopa = _compute_allocation_zopa(all_simulation_results)
+
+    # ── Section 2: Stakeholder position summary (all 13 agents) ──────────────
+    stakeholder_summary = _compute_stakeholder_summary(all_simulation_results)
+
+    # ── Section 3: Coalition stability ────────────────────────────────────────
+    coalition_stability = _compute_coalition_stability(all_simulation_results)
+
+    # ── Section 4: System-level metrics ───────────────────────────────────────
+    system_level = _compute_system_level(
+        all_simulation_results, allocation_zopa, coalition_stability
+    )
+
+    # ── Section 5: Human-readable summary ────────────────────────────────────
+    summary = _generate_summary(
+        allocation_zopa, stakeholder_summary, coalition_stability, system_level
+    )
+
+    return {
+        &quot;allocation_zopa&quot;:     allocation_zopa,
+        &quot;stakeholder_summary&quot;: stakeholder_summary,
+        &quot;coalition_stability&quot;: coalition_stability,
+        &quot;system_level&quot;:        system_level,
+        &quot;zopa_summary&quot;:        summary,
+    }
+
+
+# ── Section computations ──────────────────────────────────────────────────────
+
+def _compute_allocation_zopa(results: list[dict]) -&gt; dict:
+    &quot;&quot;&quot;Allocation range analysis for consumptive agents (ceiling &gt; 0).&quot;&quot;&quot;
+    zopa = {}
+
+    for agent in CONSUMPTIVE_AGENTS:
+        final_allocs  = []
+        round1_allocs = []
+        convictions   = []
+
+        for sim in results:
+            final = sim[&quot;final_proposals&quot;].get(agent, {})
+            if final:
+                final_allocs.append(float(final.get(&quot;proposed_allocation_maf&quot;, 0)))
+                if final.get(&quot;conviction&quot;) is not None:
+                    convictions.append(float(final.get(&quot;conviction&quot;, 0)))
+            for rd in sim[&quot;rounds&quot;]:
+                for p in rd[&quot;proposals&quot;]:
+                    if p.get(&quot;state&quot;) == agent and rd[&quot;round_number&quot;] == 1:
+                        round1_allocs.append(float(p.get(&quot;proposed_allocation_maf&quot;, 0)))
+
+        if not final_allocs:
+            continue
+
+        ceiling    = ALL_AGENT_CEILINGS_MAF.get(agent, 1)
+        n_runs     = len(final_allocs)
+        final_mean = sum(final_allocs) / n_runs
+        r1_mean    = (sum(round1_allocs) / len(round1_allocs)) if round1_allocs else final_mean
+
+        # ── Dispersion across runs → statistical confidence ──────────────────
+        # Std dev needs ≥2 samples; confidence bands need enough runs to mean
+        # anything (see MIN_RUNS_FOR_CONFIDENCE) — otherwise report None (&quot;n/a&quot;).
+        std_dev = statistics.stdev(final_allocs) if n_runs &gt;= 2 else 0.0
+        enough  = n_runs &gt;= MIN_RUNS_FOR_CONFIDENCE
+
+        if enough:
+            se_half = 1.96 * (std_dev / math.sqrt(n_runs))  # 95% CI half-width
+            ci95 = {
+                &quot;low&quot;:  round(final_mean - se_half, 3),
+                &quot;high&quot;: round(final_mean + se_half, 3),
+            }
+            # How reliably the party lands in the same place: 1 = identical every
+            # run, →0 = highly volatile. Normalised by the party&#x27;s own ceiling.
+            landing_confidence = round(max(0.0, 1.0 - (std_dev / ceiling)), 3) if ceiling &gt; 0 else None
+        else:
+            ci95 = None
+            landing_confidence = None
+
+        mean_conviction = round(sum(convictions) / len(convictions), 3) if convictions else None
+
+        zopa[agent] = {
+            &quot;ceiling_maf&quot;:             ceiling,
+            &quot;agent_type&quot;:              ALL_MANDATES[agent][&quot;agent_type&quot;],
+            &quot;n_runs&quot;:                  n_runs,
+            &quot;final_allocation_range&quot;:  {
+                &quot;min&quot;:  round(min(final_allocs), 3),
+                &quot;max&quot;:  round(max(final_allocs), 3),
+                &quot;mean&quot;: round(final_mean, 3),
+            },
+            &quot;std_dev_maf&quot;:             round(std_dev, 3),
+            &quot;confidence_interval_95&quot;:  ci95,
+            &quot;landing_confidence&quot;:      landing_confidence,
+            &quot;mean_conviction&quot;:         mean_conviction,
+            &quot;avg_concession_maf&quot;:      round(ceiling - final_mean, 3),
+            &quot;flexibility_score&quot;:       round(
+                (max(final_allocs) - min(final_allocs)) / ceiling, 4
+            ) if ceiling &gt; 0 else 0,
+            &quot;movement_toward_compromise_maf&quot;: round(r1_mean - final_mean, 3),
+        }
+
+    return zopa
+
+
+def _compute_stakeholder_summary(results: list[dict]) -&gt; dict:
+    &quot;&quot;&quot;Shortage stance and key demand summary for all 13 agents.&quot;&quot;&quot;
+    summary = {}
+
+    for agent in ALL_MANDATES:
+        stances   = []
+        demands   = []
+
+        for sim in results:
+            final = sim[&quot;final_proposals&quot;].get(agent, {})
+            if final:
+                if final.get(&quot;shortage_sharing_position&quot;):
+                    stances.append(final[&quot;shortage_sharing_position&quot;])
+                if final.get(&quot;key_demand&quot;):
+                    demands.append(final[&quot;key_demand&quot;])
+
+        if stances:
+            # Most common stance across all simulation runs
+            dominant_stance = max(set(stances), key=stances.count)
+            summary[agent] = {
+                &quot;agent_type&quot;:      ALL_MANDATES[agent][&quot;agent_type&quot;],
+                &quot;dominant_shortage_stance&quot;: dominant_stance,
+                &quot;stance_consistency_pct&quot;:  round(stances.count(dominant_stance) / len(stances) * 100),
+                &quot;sample_key_demand&quot;:       demands[0] if demands else &quot;&quot;,
+            }
+
+    return summary
+
+
+def _compute_coalition_stability(results: list[dict]) -&gt; list[dict]:
+    &quot;&quot;&quot;
+    Coalition stability: how consistently two agents align on shortage stance.
+
+    Stability = fraction of simulation runs where both agents share the
+    same shortage_sharing_position in their final proposals.
+    Only returns coalitions appearing in ≥60% of runs.
+    &quot;&quot;&quot;
+    agents    = list(ALL_MANDATES.keys())
+    n_sims    = len(results)
+    coalitions = []
+
+    for a, b in combinations(agents, 2):
+        aligned = 0
+        for sim in results:
+            pa = sim[&quot;final_proposals&quot;].get(a, {})
+            pb = sim[&quot;final_proposals&quot;].get(b, {})
+            if (pa.get(&quot;shortage_sharing_position&quot;) and
+                pb.get(&quot;shortage_sharing_position&quot;) and
+                pa[&quot;shortage_sharing_position&quot;] == pb[&quot;shortage_sharing_position&quot;]):
+                aligned += 1
+
+        stability = aligned / n_sims if n_sims &gt; 0 else 0
+        if stability &gt;= 0.6:
+            coalitions.append({
+                &quot;agent_a&quot;:   a,
+                &quot;agent_b&quot;:   b,
+                &quot;stability&quot;: round(stability, 2),
+                &quot;label&quot;:     &quot;HIGHLY STABLE&quot; if stability &gt;= 0.9 else
+                             &quot;STABLE&quot;        if stability &gt;= 0.75 else
+                             &quot;MODERATE&quot;,
+            })
+
+    return sorted(coalitions, key=lambda x: x[&quot;stability&quot;], reverse=True)
+
+
+def _compute_system_level(
+    results: list[dict],
+    allocation_zopa: dict,
+    coalitions: list[dict]
+) -&gt; dict:
+    &quot;&quot;&quot;System-wide metrics: grand totals, rigid/flexible agents, verdict.&quot;&quot;&quot;
+
+    # Grand total = compact basin states only (non-state actors excluded)
+    grand_totals = []
+    for sim in results:
+        total = sum(
+            float(p.get(&quot;proposed_allocation_maf&quot;, 0))
+            for p in sim[&quot;final_proposals&quot;].values()
+            if p.get(&quot;state&quot;) in STATE_AGENTS
+        )
+        grand_totals.append(total)
+
+    mean_total = sum(grand_totals) / len(grand_totals) if grand_totals else 0
+
+    # Feasibility confidence = share of runs whose final state claims actually
+    # closed the shortfall (grand total within the available supply). This turns
+    # the qualitative HIGH/MODERATE/LOW verdict into a measured probability.
+    n_runs = len(grand_totals)
+    feasible_runs = sum(1 for t in grand_totals if t &lt;= AVAILABLE_SUPPLY_MAF + 0.05)
+    feasibility_confidence = round(feasible_runs / n_runs, 3) if n_runs else None
+
+    rigid_agents = [
+        a for a, d in allocation_zopa.items()
+        if d[&quot;flexibility_score&quot;] &lt; 0.05
+    ]
+    flexible_agents = sorted(
+        allocation_zopa.items(),
+        key=lambda x: x[1][&quot;flexibility_score&quot;],
+        reverse=True
+    )
+    converging_agents = [
+        a for a, d in allocation_zopa.items()
+        if d[&quot;movement_toward_compromise_maf&quot;] &gt; 0.05
+    ]
+
+    total_violations = sum(len(s[&quot;constraint_violations&quot;]) for s in results)
+
+    if mean_total &lt;= 14.5:
+        feasibility = &quot;HIGH — proposals consistently within drought-supply range&quot;
+    elif mean_total &lt;= 16.0:
+        feasibility = &quot;MODERATE — proposals near compact ceiling; shortage-era gaps remain&quot;
+    else:
+        feasibility = &quot;LOW — total compact demands significantly exceed available supply&quot;
+
+    return {
+        &quot;compact_grand_total_maf&quot;: {
+            &quot;min&quot;:  round(min(grand_totals), 2) if grand_totals else 0,
+            &quot;max&quot;:  round(max(grand_totals), 2) if grand_totals else 0,
+            &quot;mean&quot;: round(mean_total, 2),
+        },
+        &quot;total_constraint_violations&quot;: total_violations,
+        &quot;rigid_agents&quot;:      rigid_agents,
+        &quot;most_flexible&quot;:     [a for a, _ in flexible_agents[:3]],
+        &quot;converging_agents&quot;: converging_agents,
+        &quot;stable_coalitions&quot;: len([c for c in coalitions if c[&quot;stability&quot;] &gt;= 0.75]),
+        &quot;feasibility&quot;:       feasibility,
+        &quot;feasibility_confidence&quot;: feasibility_confidence,
+        &quot;n_runs&quot;:            n_runs,
+    }
+
+
+def _generate_summary(
+    allocation_zopa: dict,
+    stakeholder_summary: dict,
+    coalitions: list[dict],
+    system_level: dict
+) -&gt; str:
+    &quot;&quot;&quot;Formats the full ZOPA report as a readable console string.&quot;&quot;&quot;
+    lines = []
+    lines.append(&quot;&quot;)
+    lines.append(&quot;╔══════════════════════════════════════════════════════════════╗&quot;)
+    lines.append(&quot;║   ZONE OF POSSIBLE AGREEMENT — ANALYSIS REPORT (13 AGENTS) ║&quot;)
+    lines.append(&quot;╚══════════════════════════════════════════════════════════════╝&quot;)
+
+    # ── Section 1: Allocation ZOPA ────────────────────────────────────────────
+    lines.append(&quot;\n  ── ALLOCATION ZOPA (consumptive agents) ─────────────────────&quot;)
+    lines.append(
+        f&quot;  {&#x27;AGENT&#x27;:&lt;20}  {&#x27;TYPE&#x27;:&lt;13}  {&#x27;CEILING&#x27;:&gt;8}  &quot;
+        f&quot;{&#x27;CONVERGED RANGE&#x27;:&gt;18}  {&#x27;MEAN&#x27;:&gt;7}  {&#x27;CONCESSION&#x27;:&gt;10}  {&#x27;FLEX&#x27;:&gt;5}  &quot;
+        f&quot;{&#x27;CONVICT&#x27;:&gt;7}  {&#x27;CONF&#x27;:&gt;5}&quot;
+    )
+    lines.append(
+        f&quot;  {&#x27;─&#x27;*20}  {&#x27;─&#x27;*13}  {&#x27;─&#x27;*8}  {&#x27;─&#x27;*18}  {&#x27;─&#x27;*7}  {&#x27;─&#x27;*10}  {&#x27;─&#x27;*5}  &quot;
+        f&quot;{&#x27;─&#x27;*7}  {&#x27;─&#x27;*5}&quot;
+    )
+
+    for agent, d in allocation_zopa.items():
+        r = d[&quot;final_allocation_range&quot;]
+        convict = f&quot;{d[&#x27;mean_conviction&#x27;]:.2f}&quot;    if d.get(&quot;mean_conviction&quot;)    is not None else &quot;  —  &quot;
+        conf    = f&quot;{d[&#x27;landing_confidence&#x27;]:.2f}&quot; if d.get(&quot;landing_confidence&quot;) is not None else &quot; n/a &quot;
+        lines.append(
+            f&quot;  {agent:&lt;20}  {d[&#x27;agent_type&#x27;]:&lt;13}  {d[&#x27;ceiling_maf&#x27;]:&gt;6.3f} MAF&quot;
+            f&quot;  [{r[&#x27;min&#x27;]:.2f}–{r[&#x27;max&#x27;]:.2f}] MAF&quot;
+            f&quot;  {r[&#x27;mean&#x27;]:&gt;5.3f} MAF&quot;
+            f&quot;  {d[&#x27;avg_concession_maf&#x27;]:&gt;+8.3f} MAF&quot;
+            f&quot;  {d[&#x27;flexibility_score&#x27;]:&gt;5.3f}&quot;
+            f&quot;  {convict:&gt;7}  {conf:&gt;5}&quot;
+        )
+
+    # ── Section 2: Stakeholder positions ─────────────────────────────────────
+    lines.append(&quot;\n  ── STAKEHOLDER SHORTAGE STANCE (all 13 agents) ──────────────&quot;)
+    lines.append(f&quot;  {&#x27;AGENT&#x27;:&lt;20}  {&#x27;TYPE&#x27;:&lt;13}  {&#x27;DOMINANT STANCE&#x27;:&lt;15}  {&#x27;CONSISTENCY&#x27;:&gt;11}&quot;)
+    lines.append(f&quot;  {&#x27;─&#x27;*20}  {&#x27;─&#x27;*13}  {&#x27;─&#x27;*15}  {&#x27;─&#x27;*11}&quot;)
+
+    for agent, d in stakeholder_summary.items():
+        lines.append(
+            f&quot;  {agent:&lt;20}  {d[&#x27;agent_type&#x27;]:&lt;13}  &quot;
+            f&quot;{d[&#x27;dominant_shortage_stance&#x27;]:&lt;15}  &quot;
+            f&quot;{d[&#x27;stance_consistency_pct&#x27;]:&gt;9}%&quot;
+        )
+
+    # ── Section 3: Coalition stability ───────────────────────────────────────
+    lines.append(&quot;\n  ── COALITION STABILITY ──────────────────────────────────────&quot;)
+    if coalitions:
+        lines.append(f&quot;  {&#x27;PAIR&#x27;:&lt;40}  {&#x27;STABILITY&#x27;:&gt;9}  {&#x27;LABEL&#x27;}&quot;)
+        lines.append(f&quot;  {&#x27;─&#x27;*40}  {&#x27;─&#x27;*9}  {&#x27;─&#x27;*13}&quot;)
+        for c in coalitions[:8]:   # Top 8 coalitions
+            bar   = &quot;█&quot; * int(c[&quot;stability&quot;] * 10)
+            pair  = f&quot;{c[&#x27;agent_a&#x27;]} + {c[&#x27;agent_b&#x27;]}&quot;
+            lines.append(
+                f&quot;  {pair:&lt;40}  {c[&#x27;stability&#x27;]:&gt;8.2f}  {bar:&lt;10}  {c[&#x27;label&#x27;]}&quot;
+            )
+    else:
+        lines.append(&quot;  No stable coalitions detected (need ≥2 simulation runs).&quot;)
+
+    # ── Section 4: System verdict ─────────────────────────────────────────────
+    lines.append(&quot;\n  ── SYSTEM VERDICT ───────────────────────────────────────────&quot;)
+    sl = system_level
+    lines.append(
+        f&quot;  Compact grand total:  {sl[&#x27;compact_grand_total_maf&#x27;][&#x27;min&#x27;]:.2f} – &quot;
+        f&quot;{sl[&#x27;compact_grand_total_maf&#x27;][&#x27;max&#x27;]:.2f} MAF  &quot;
+        f&quot;(mean: {sl[&#x27;compact_grand_total_maf&#x27;][&#x27;mean&#x27;]:.2f} MAF)&quot;
+    )
+    lines.append(f&quot;  Constraint violations caught by symbolic layer:  {sl[&#x27;total_constraint_violations&#x27;]}&quot;)
+    lines.append(f&quot;  Stable coalitions (≥75% alignment):  {sl[&#x27;stable_coalitions&#x27;]}&quot;)
+    lines.append(&quot;&quot;)
+
+    if sl[&quot;rigid_agents&quot;]:
+        lines.append(f&quot;  ⚠  STRUCTURAL FRAGILITY: {&#x27;, &#x27;.join(sl[&#x27;rigid_agents&#x27;])} — minimal flexibility.&quot;)
+    if sl[&quot;converging_agents&quot;]:
+        lines.append(f&quot;  ↘  CONVERGING: {&#x27;, &#x27;.join(sl[&#x27;converging_agents&#x27;])} — moved toward compromise.&quot;)
+    lines.append(f&quot;  ✦  MOST FLEXIBLE: {&#x27;, &#x27;.join(sl[&#x27;most_flexible&#x27;])}&quot;)
+    lines.append(f&quot;  ✓  FEASIBILITY: {sl[&#x27;feasibility&#x27;]}&quot;)
+
+    fc = sl.get(&quot;feasibility_confidence&quot;)
+    if fc is not None:
+        lines.append(
+            f&quot;  ✓  FEASIBILITY CONFIDENCE: {fc*100:.0f}% of runs closed the shortfall &quot;
+            f&quot;(n={sl.get(&#x27;n_runs&#x27;, &#x27;?&#x27;)}).&quot;
+        )
+    if sl.get(&quot;n_runs&quot;, 0) &lt; MIN_RUNS_FOR_CONFIDENCE:
+        lines.append(
+            f&quot;  ℹ  CONF column shows &#x27;n/a&#x27; — per-party confidence bands need &quot;
+            f&quot;≥{MIN_RUNS_FOR_CONFIDENCE} runs to be meaningful (current n={sl.get(&#x27;n_runs&#x27;, &#x27;?&#x27;)}).&quot;
+        )
+    lines.append(
+        &quot;     CONVICT = mean rigidity 0–1 (high = a wall, low = flexing);  &quot;
+        &quot;CONF = landing confidence (how reliably the party lands in one place).&quot;
+    )
+    lines.append(&quot;&quot;)
+
+    return &quot;\n&quot;.join(lines)</code></pre></details>
+<details class="mh-code"><summary><b>docx_report.py</b></summary><pre class="mh-pre"><code>&quot;&quot;&quot;
+docx_report.py — Mulholland Multiagent System
+================================================
+Renders a completed simulation run (the same payload written to
+output/mulholland_results_&lt;timestamp&gt;.json) as a Word document, styled to
+match the existing NEGOTIATION OUTPUT.docx template: Arial 9pt body text,
+bold numbered section headers, dash-prefixed bullet lines, and space-padded
+pseudo-tables — no real Word tables, colors, or list styles.
+&quot;&quot;&quot;
+
+from docx import Document
+from docx.shared import Pt
+
+from zopa_analyzer import MIN_RUNS_FOR_CONFIDENCE
+
+FONT_NAME = &quot;Arial&quot;
+FONT_SIZE = Pt(9)
+
+
+def _set_run_style(run, bold=False):
+    run.font.name = FONT_NAME
+    run.font.size = FONT_SIZE
+    run.bold = bold
+
+
+def _add_line(doc, text=&quot;&quot;, bold=False):
+    &quot;&quot;&quot;Adds one plain paragraph styled like the template&#x27;s body/heading text.&quot;&quot;&quot;
+    p = doc.add_paragraph()
+    run = p.add_run(text)
+    _set_run_style(run, bold=bold)
+    return p
+
+
+def _add_lines(doc, lines, bold=False):
+    for line in lines:
+        _add_line(doc, line, bold=bold)
+
+
+def _add_header(doc, text):
+    _add_line(doc, text, bold=True)
+
+
+def generate_docx(output_payload: dict, output_path: str) -&gt; None:
+    &quot;&quot;&quot;Writes output_payload (the same dict saved to the results JSON) to a
+    .docx report at output_path.&quot;&quot;&quot;
+    meta        = output_payload.get(&quot;run_metadata&quot;, {})
+    simulations = output_payload[&quot;simulations&quot;]
+    zopa        = output_payload[&quot;zopa_analysis&quot;]
+
+    allocation_zopa     = zopa[&quot;allocation_zopa&quot;]
+    stakeholder_summary = zopa[&quot;stakeholder_summary&quot;]
+    coalitions           = zopa[&quot;coalition_stability&quot;]
+    system_level         = zopa[&quot;system_level&quot;]
+
+    doc = Document()
+    doc.styles[&quot;Normal&quot;].font.name = FONT_NAME
+    doc.styles[&quot;Normal&quot;].font.size = FONT_SIZE
+
+    # ── Title ──────────────────────────────────────────────────────────────
+    _add_line(doc, &quot;Colorado River Negotiation Simulation Output Memo&quot;)
+    _add_line(doc, &quot;&quot;)
+
+    # ── 1. Executive Summary ─────────────────────────────────────────────
+    _add_header(doc, &quot;1. Executive Summary&quot;)
+    total_violations = sum(len(s[&quot;constraint_violations&quot;]) for s in simulations)
+    _add_lines(doc, [
+        f&quot;This report summarizes {meta.get(&#x27;num_simulations&#x27;, len(simulations))} negotiation simulation(s) of the &quot;
+        f&quot;{meta.get(&#x27;scenario&#x27;, &#x27;N/A&#x27;)}, run against {meta.get(&#x27;model&#x27;, &#x27;N/A&#x27;)}.&quot;,
+        f&quot;The symbolic constraint layer caught {total_violations} rule violation(s) across all &quot;
+        f&quot;runs. Overall system feasibility: {system_level[&#x27;feasibility&#x27;]}&quot;,
+    ])
+    _add_line(doc, &quot;&quot;)
+
+    # ── 2. Simulation Metadata ───────────────────────────────────────────
+    _add_header(doc, &quot;2. Simulation Metadata&quot;)
+    _add_lines(doc, [
+        f&quot;Scenario Name: {meta.get(&#x27;scenario&#x27;, &#x27;N/A&#x27;)}&quot;,
+        f&quot;System: {meta.get(&#x27;system&#x27;, &#x27;N/A&#x27;)}&quot;,
+        f&quot;Model Version: {meta.get(&#x27;model&#x27;, &#x27;N/A&#x27;)}&quot;,
+        f&quot;Number of Simulations: {meta.get(&#x27;num_simulations&#x27;, len(simulations))}&quot;,
+        f&quot;Timestamp: {meta.get(&#x27;timestamp&#x27;, &#x27;N/A&#x27;)}&quot;,
+    ])
+    _add_line(doc, &quot;&quot;)
+
+    # ── 3. Scenario Description ──────────────────────────────────────────
+    _add_header(doc, &quot;3. Scenario Description&quot;)
+    _add_lines(doc, [
+        &quot;Thirteen agents negotiate Colorado River Basin water allocation across &quot;
+        &quot;multiple rounds: the seven Basin States (California, Arizona, Nevada, &quot;
+        &quot;Colorado, Utah, Wyoming, New Mexico), the Bureau of Reclamation / DOI / &quot;
+        &quot;USFWS, two Tribal Nations (Navajo Nation, CRIT), Mexico/IBWC, the &quot;
+        &quot;Imperial Irrigation District, and the Environmental/ESA coalition.&quot;,
+        &quot;Each agent proposes an allocation and shortage-sharing position every &quot;
+        &quot;round (neural layer); the constraint checker validates every proposal &quot;
+        &quot;against legal ceilings and red lines, clamping violations (symbolic layer).&quot;,
+    ])
+    _add_line(doc, &quot;&quot;)
+
+    # ── 4. Model Assumptions (Field Guide) ───────────────────────────────
+    _add_header(doc, &quot;4. Model Assumptions (Field Guide)&quot;)
+    _add_line(doc, &quot;Allocation Ceiling&quot;)
+    _add_line(doc, &quot;Definition: Maximum allocation (MAF/year) an agent may legally claim, &quot;
+                   &quot;enforced by the symbolic constraint checker.&quot;)
+    _add_line(doc, &quot;Units: Million Acre-Feet (MAF)&quot;)
+    _add_line(doc, &quot;&quot;)
+    _add_line(doc, &quot;Shortage Sharing Position&quot;)
+    _add_line(doc, &quot;Definition: An agent&#x27;s declared willingness to absorb shortage-era cuts, &quot;
+                   &quot;ranging refuse -&gt; reluctant -&gt; moderate -&gt; willing -&gt; champion.&quot;)
+    _add_line(doc, &quot;&quot;)
+    _add_line(doc, &quot;Zone of Possible Agreement (ZOPA)&quot;)
+    _add_line(doc, &quot;Definition: The range of final allocations across simulation runs where &quot;
+                   &quot;agreement was reached without triggering unresolved constraint violations.&quot;)
+    _add_line(doc, &quot;&quot;)
+
+    # ── 5. Key Results ────────────────────────────────────────────────────
+    _add_line(doc, &quot;5. Key Results&quot;)
+    ct = system_level[&quot;compact_grand_total_maf&quot;]
+    _add_lines(doc, [
+        f&quot;Compact Grand Total (states only): {ct[&#x27;min&#x27;]}-{ct[&#x27;max&#x27;]} MAF (mean: {ct[&#x27;mean&#x27;]} MAF)&quot;,
+        f&quot;Total Constraint Violations: {system_level[&#x27;total_constraint_violations&#x27;]}&quot;,
+        f&quot;Stable Coalitions (&gt;=75% alignment): {system_level[&#x27;stable_coalitions&#x27;]}&quot;,
+        f&quot;Most Flexible Agents: {&#x27;, &#x27;.join(system_level[&#x27;most_flexible&#x27;])}&quot;,
+        f&quot;Rigid Agents: {&#x27;, &#x27;.join(system_level[&#x27;rigid_agents&#x27;]) if system_level[&#x27;rigid_agents&#x27;] else &#x27;None&#x27;}&quot;,
+        f&quot;Converging Agents: {&#x27;, &#x27;.join(system_level[&#x27;converging_agents&#x27;]) if system_level[&#x27;converging_agents&#x27;] else &#x27;None&#x27;}&quot;,
+        f&quot;Feasibility Verdict: {system_level[&#x27;feasibility&#x27;]}&quot;,
+    ])
+    fc = system_level.get(&quot;feasibility_confidence&quot;)
+    if fc is not None:
+        _add_line(
+            doc,
+            f&quot;Feasibility Confidence: {fc*100:.0f}% of runs closed the shortfall &quot;
+            f&quot;(n={system_level.get(&#x27;n_runs&#x27;, &#x27;?&#x27;)} runs).&quot;
+        )
+    _add_line(doc, &quot;&quot;)
+
+    # ── 5B. Water Deliveries by State (pseudo-table) ─────────────────────
+    _add_line(doc, &quot;5B. Final Allocation Ranges by Agent (Example Table)&quot;)
+    _add_line(doc, &quot;CONVICTION = mean rigidity 0-1 (high = holds firm; low = flexes). &quot;
+                   &quot;CONFIDENCE = how reliably the party lands in one place across runs &quot;
+                   f&quot;(n/a until &gt;={MIN_RUNS_FOR_CONFIDENCE} runs).&quot;)
+    header = (f&quot;{&#x27;AGENT&#x27;:&lt;20}{&#x27;CEILING&#x27;:&gt;10}{&#x27;RANGE (MIN-MAX)&#x27;:&gt;22}{&#x27;MEAN&#x27;:&gt;10}&quot;
+              f&quot;{&#x27;CONCESSION&#x27;:&gt;13}{&#x27;CONVICTION&#x27;:&gt;12}{&#x27;CONFIDENCE&#x27;:&gt;12}&quot;)
+    _add_line(doc, header)
+    for agent, d in allocation_zopa.items():
+        r = d[&quot;final_allocation_range&quot;]
+        range_str = f&quot;{r[&#x27;min&#x27;]:.2f}-{r[&#x27;max&#x27;]:.2f}&quot;
+        convict = f&quot;{d[&#x27;mean_conviction&#x27;]:.2f}&quot;    if d.get(&quot;mean_conviction&quot;)    is not None else &quot;-&quot;
+        conf    = f&quot;{d[&#x27;landing_confidence&#x27;]:.2f}&quot; if d.get(&quot;landing_confidence&quot;) is not None else &quot;n/a&quot;
+        row = (
+            f&quot;{agent:&lt;20}{d[&#x27;ceiling_maf&#x27;]:&gt;9.3f} &quot;
+            f&quot;{range_str:&gt;21} &quot;
+            f&quot;{r[&#x27;mean&#x27;]:&gt;9.3f} &quot;
+            f&quot;{d[&#x27;avg_concession_maf&#x27;]:&gt;+12.3f}&quot;
+            f&quot;{convict:&gt;12}{conf:&gt;12}&quot;
+        )
+        _add_line(doc, row)
+    _add_line(doc, &quot;&quot;)
+
+    # ── 6. Drivers of Outcome ────────────────────────────────────────────
+    _add_header(doc, &quot;6. Drivers of Outcome&quot;)
+    _add_line(doc, &quot;Example:&quot;)
+    drivers = []
+    if system_level[&quot;rigid_agents&quot;]:
+        drivers.append(f&quot; - {&#x27;, &#x27;.join(system_level[&#x27;rigid_agents&#x27;])} showed minimal allocation &quot;
+                        f&quot;flexibility across all simulation runs.&quot;)
+    if system_level[&quot;converging_agents&quot;]:
+        drivers.append(f&quot; - {&#x27;, &#x27;.join(system_level[&#x27;converging_agents&#x27;])} moved toward compromise &quot;
+                        f&quot;between opening and final proposals.&quot;)
+    drivers.append(f&quot; - {system_level[&#x27;total_constraint_violations&#x27;]} proposal(s) required clamping &quot;
+                    f&quot;by the symbolic constraint layer to stay within legal ceilings.&quot;)
+    _add_lines(doc, drivers)
+    _add_line(doc, &quot;&quot;)
+
+    # ── 6B. Stakeholder Shortage Stances (pseudo-table) ──────────────────
+    _add_line(doc, &quot;6B. Stakeholder Shortage Stances&quot;)
+    header = f&quot;{&#x27;AGENT&#x27;:&lt;20}{&#x27;TYPE&#x27;:&lt;15}{&#x27;DOMINANT STANCE&#x27;:&lt;18}{&#x27;CONSISTENCY&#x27;:&gt;12}&quot;
+    _add_line(doc, header)
+    for agent, d in stakeholder_summary.items():
+        row = (
+            f&quot;{agent:&lt;20}{d[&#x27;agent_type&#x27;]:&lt;15}{d[&#x27;dominant_shortage_stance&#x27;]:&lt;18}&quot;
+            f&quot;{d[&#x27;stance_consistency_pct&#x27;]:&gt;11}%&quot;
+        )
+        _add_line(doc, row)
+    _add_line(doc, &quot;&quot;)
+
+    # ── 7. Policy Implications ───────────────────────────────────────────
+    _add_header(doc, &quot;7. Policy Implications&quot;)
+    _add_line(doc, &quot;Example:&quot;)
+    if coalitions:
+        top = coalitions[:5]
+        policy_lines = [
+            f&quot; - {c[&#x27;agent_a&#x27;]} + {c[&#x27;agent_b&#x27;]}: {c[&#x27;label&#x27;]} coalition &quot;
+            f&quot;({c[&#x27;stability&#x27;]*100:.0f}% alignment across runs).&quot;
+            for c in top
+        ]
+    else:
+        policy_lines = [&quot; - No stable coalitions detected (need &gt;=2 simulation runs).&quot;]
+    _add_lines(doc, policy_lines)
+    _add_line(doc, &quot;&quot;)
+
+    # ── 8. Model Limitations / Uncertainty ───────────────────────────────
+    _add_header(doc, &quot;8. Model Limitations / Uncertainty&quot;)
+    _add_line(doc, &quot;Example:&quot;)
+    _add_lines(doc, [
+        &quot; - AI simulation cannot capture tribal cultural values, traditional ecological &quot;
+        &quot;knowledge, or community decision-making for Navajo Nation and CRIT; direct tribal &quot;
+        &quot;governmental consultation is required for any real-world use.&quot;,
+        &quot; - Proposals are generated by a language model and may not reflect actual &quot;
+        &quot;negotiating positions of real stakeholders.&quot;,
+        &quot; - Results depend on model version and prompt design; re-running the simulation &quot;
+        &quot;may produce different outcomes.&quot;,
+    ])
+    _add_line(doc, &quot;&quot;)
+
+    doc.save(output_path)
+</code></pre></details>
+<details class="mh-code"><summary><b>conversation_log.py</b></summary><pre class="mh-pre"><code>&quot;&quot;&quot;
+conversation_log.py — Mulholland Multiagent System
+===================================================
+LIVE TRANSCRIPT — every agent&#x27;s raw generated output, every round, every run.
+
+Writes output/all_conversations.txt as the simulation runs: for each agent, at
+each round, of each simulation, the exact text the model generated — its stated
+demand, concession, rationale, and shortage stance, verbatim. Read it after a
+run to understand *why* coalitions formed, why proposals were rejected, or why
+agents converged — the raw narrative behind the numeric ZOPA analysis.
+
+Design decisions:
+  • APPEND-ONLY. Every `python main.py` run adds a new, clearly delimited RUN
+    section rather than overwriting — so the file is a running archive across
+    all runs, exactly as requested (&quot;for every run that we do&quot;).
+  • WRITTEN PER TURN (open → append → close each call), so a crash, SLURM time
+    limit, or node preemption never loses the transcript up to that point — the
+    same durability philosophy as checkpoint.py. On resume, only the rounds that
+    actually re-run get re-logged (already-completed rounds are skipped upstream).
+  • NO-OP UNTIL INITIALISED. If init_conversation_log() was never called (e.g. a
+    unit test importing negotiation.py directly), every log_* function silently
+    does nothing — negotiation.py can call them unconditionally.
+
+The record here is the raw model text. The structured/parsed proposals still
+live in the results JSON; this file is the human-readable counterpart.
+&quot;&quot;&quot;
+
+import os
+from datetime import datetime
+
+# Single fixed file — one growing archive, not a per-run timestamped file.
+DEFAULT_PATH = os.path.join(&quot;output&quot;, &quot;all_conversations.txt&quot;)
+
+_log_path = None
+
+
+def init_conversation_log(path: str = DEFAULT_PATH, metadata: dict | None = None) -&gt; None:
+    &quot;&quot;&quot;
+    Enables logging and writes a RUN header. Call once at the start of a run
+    (main.py). Uses append mode, so prior runs&#x27; transcripts are preserved.
+
+    Args:
+        path     : Output file. Defaults to output/all_conversations.txt.
+        metadata : Optional {label: value} pairs (model, num simulations, ...)
+                   written into the run header for later reference.
+    &quot;&quot;&quot;
+    global _log_path
+    _log_path = path
+
+    directory = os.path.dirname(path) or &quot;.&quot;
+    os.makedirs(directory, exist_ok=True)
+
+    lines = [
+        &quot;&quot;,
+        &quot;=&quot; * 80,
+        f&quot;RUN STARTED  {datetime.now().isoformat(timespec=&#x27;seconds&#x27;)}&quot;,
+    ]
+    if metadata:
+        lines.append(&quot;  |  &quot;.join(f&quot;{k}: {v}&quot; for k, v in metadata.items()))
+    lines += [&quot;=&quot; * 80, &quot;&quot;]
+    _append(&quot;\n&quot;.join(lines) + &quot;\n&quot;)
+
+
+def log_round_header(simulation_id: int, round_number: int, label: str = &quot;&quot;) -&gt; None:
+    &quot;&quot;&quot;Writes a banner marking the start of one round of one simulation.&quot;&quot;&quot;
+    if _log_path is None:
+        return
+    banner = f&quot; SIMULATION {simulation_id}  |  ROUND {round_number} {label} &quot;.strip()
+    _append(&quot;\n&quot; + &quot;-&quot; * 80 + &quot;\n&quot; + banner + &quot;\n&quot; + &quot;-&quot; * 80 + &quot;\n&quot;)
+
+
+def log_agent_turn(
+    simulation_id: int,
+    round_number: int,
+    agent_name: str,
+    agent_type: str,
+    raw_generation: str,
+    validation: dict | None = None,
+) -&gt; None:
+    &quot;&quot;&quot;
+    Appends one agent&#x27;s raw generated output for this round, followed by the
+    symbolic constraint layer&#x27;s verdict (so you can see, in place, whether that
+    proposal was accepted as-is or clamped for crossing a legal ceiling).
+
+    Args:
+        raw_generation : The exact text the model produced (agent.last_raw_generation).
+        validation     : The dict from constraint_checker.check_proposal(), or None.
+    &quot;&quot;&quot;
+    if _log_path is None:
+        return
+
+    atype = (agent_type or &quot;&quot;).upper()
+    out = f&quot;\n---- [{atype}] {agent_name} ----\n&quot;
+    out += (raw_generation or &quot;&quot;).strip() + &quot;\n&quot;
+
+    if validation is not None:
+        if validation.get(&quot;valid&quot;, True):
+            out += &quot;[constraint layer: OK — accepted as proposed]\n&quot;
+        else:
+            viols = &quot;; &quot;.join(validation.get(&quot;violations&quot;, [])) or &quot;constraint violation&quot;
+            out += f&quot;[constraint layer: CLAMPED to legal ceiling — {viols}]\n&quot;
+        for w in validation.get(&quot;warnings&quot;, []):
+            out += f&quot;[constraint layer warning: {w}]\n&quot;
+
+    _append(out)
+
+
+def _append(text: str) -&gt; None:
+    &quot;&quot;&quot;Open-append-close so partial progress survives a crash mid-run.&quot;&quot;&quot;
+    with open(_log_path, &quot;a&quot;, encoding=&quot;utf-8&quot;) as f:
+        f.write(text)
+</code></pre></details>
+<details class="mh-code"><summary><b>checkpoint.py</b></summary><pre class="mh-pre"><code>&quot;&quot;&quot;
+checkpoint.py — Mulholland Multiagent System
+=============================================
+CRASH RECOVERY — save progress after every round, resume where it stopped.
+
+A full run is NUM_SIMULATIONS × NUM_ROUNDS_PER_SIM × 13 agents of LLM calls
+(3 × 100 × 13 = 3,900 at current settings — many hours). Anything that
+interrupts it — a SLURM time limit, a preempted node, an OOM kill, a dropped
+connection — otherwise throws away every completed round.
+
+State is written after each round to output/checkpoint.json, so a re-run
+picks up from the next unfinished round rather than starting over. The file
+is deleted automatically once a run completes, so a normal finished run
+leaves nothing behind to resume from.
+
+Usage is driven from main.py:
+
+    ckpt = load_checkpoint()          # None if no interrupted run exists
+    ...
+    save_checkpoint(state)            # after each round
+    clear_checkpoint()                # after the whole run succeeds
+&quot;&quot;&quot;
+
+import json
+import os
+import tempfile
+
+CHECKPOINT_PATH = os.path.join(&quot;output&quot;, &quot;checkpoint.json&quot;)
+
+
+def save_checkpoint(state: dict, path: str = CHECKPOINT_PATH) -&gt; None:
+    &quot;&quot;&quot;
+    Writes checkpoint state atomically: serialise to a temp file in the same
+    directory, then os.replace() it over the target. os.replace is atomic on
+    POSIX, so a crash *during* a write can never leave a half-written,
+    unparseable checkpoint behind — you either get the previous good file or
+    the new one, never a corrupt hybrid. This matters here precisely because
+    the failures we&#x27;re recovering from (SIGKILL, node preemption) can land
+    mid-write.
+    &quot;&quot;&quot;
+    directory = os.path.dirname(path) or &quot;.&quot;
+    os.makedirs(directory, exist_ok=True)
+
+    fd, tmp_path = tempfile.mkstemp(dir=directory, suffix=&quot;.checkpoint.tmp&quot;)
+    try:
+        with os.fdopen(fd, &quot;w&quot;) as f:
+            json.dump(state, f, indent=2)
+        os.replace(tmp_path, path)
+    except BaseException:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
+
+
+def load_checkpoint(path: str = CHECKPOINT_PATH) -&gt; dict | None:
+    &quot;&quot;&quot;
+    Returns saved checkpoint state, or None if there&#x27;s nothing to resume.
+
+    A corrupt/unreadable checkpoint also returns None (with a warning) rather
+    than raising — a bad checkpoint should cost you a restart, not block the
+    run entirely.
+    &quot;&quot;&quot;
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        print(f&quot;  [WARNING] Checkpoint at {path} is unreadable ({e}) — starting fresh.&quot;)
+        return None
+
+
+def clear_checkpoint(path: str = CHECKPOINT_PATH) -&gt; None:
+    &quot;&quot;&quot;Removes the checkpoint. Called once a full run finishes successfully.&quot;&quot;&quot;
+    if os.path.exists(path):
+        os.remove(path)
+
+
+def checkpoint_is_compatible(ckpt: dict, num_simulations: int, num_rounds: int) -&gt; bool:
+    &quot;&quot;&quot;
+    Guards against resuming into a config that no longer matches.
+
+    If NUM_SIMULATIONS or NUM_ROUNDS_PER_SIM changed since the checkpoint was
+    written, resuming would silently mix results produced under two different
+    experiment configurations into one output file — which is worse than
+    losing the progress, because the corruption is invisible in the results.
+    &quot;&quot;&quot;
+    saved = ckpt.get(&quot;config&quot;, {})
+    return (
+        saved.get(&quot;num_simulations&quot;) == num_simulations
+        and saved.get(&quot;num_rounds_per_sim&quot;) == num_rounds
+    )
+</code></pre></details>
+<details class="mh-code"><summary><b>colorado_river_2026.json</b></summary><pre class="mh-pre"><code>{
+  &quot;scenario&quot;: {
+    &quot;name&quot;:        &quot;Colorado River Basin 2026 Post-Guideline Renegotiation&quot;,
+    &quot;description&quot;: &quot;Seven-state negotiation over post-2026 operating guidelines&quot;,
+    &quot;domain&quot;:      &quot;water_rights&quot;,
+    &quot;region&quot;:      &quot;Colorado River Basin, Southwestern United States&quot;,
+    &quot;deadline&quot;:    &quot;2026-12-31&quot;,
+    &quot;context&quot;:     &quot;The 2007 Interim Guidelines and 2019 DCP expire in 2026. All seven basin states plus federal agencies and tribal nations must agree on new operating rules before the Federal Government imposes its own allocation.&quot;
+  },
+
+  &quot;supply_conditions&quot;: {
+    &quot;available_supply_maf&quot;:     11.0,
+    &quot;drought_scenario&quot;:         &quot;severe&quot;,
+    &quot;drought_duration_years&quot;:   25,
+    &quot;lake_powell_start_ft&quot;:     3560,
+    &quot;lake_mead_start_ft&quot;:       1060,
+    &quot;notes&quot;: &quot;Based on Bureau of Reclamation CMIP6 projections for 2026-2050&quot;
+  },
+
+  &quot;simulation_parameters&quot;: {
+    &quot;num_simulations&quot;:    1,
+    &quot;num_rounds&quot;:         1,
+    &quot;model&quot;:              &quot;gpt-4o-mini&quot;,
+    &quot;temperature&quot;:        0.7
+  },
+
+  &quot;active_agents&quot;: [
+    &quot;California&quot;,
+    &quot;Arizona&quot;,
+    &quot;Nevada&quot;,
+    &quot;Colorado&quot;,
+    &quot;Utah&quot;,
+    &quot;Wyoming&quot;,
+    &quot;New Mexico&quot;,
+    &quot;Federal_BOR&quot;,
+    &quot;Navajo_Nation&quot;,
+    &quot;CRIT&quot;,
+    &quot;Mexico_IBWC&quot;,
+    &quot;IID&quot;,
+    &quot;Environmental_ESA&quot;
+  ],
+
+  &quot;mandate_overrides&quot;: {
+    &quot;Arizona&quot;: {
+      &quot;position&quot;: &quot;Arizona has already absorbed 592,000 AF in Tier 1 cuts and is approaching its minimum viable allocation for Phoenix and Tucson. Demands proportional cuts from California before accepting any further reductions.&quot;,
+      &quot;red_lines&quot;: [
+        &quot;Refuses any further cuts without California contributing proportionally.&quot;,
+        &quot;Minimum viable allocation for Phoenix and Tucson municipal supply: 1.6 MAF.&quot;
+      ]
+    }
+  },
+
+  &quot;success_criteria&quot;: {
+    &quot;minimum_agreement_threshold_pct&quot;: 70,
+    &quot;required_signatories&quot;: [
+      &quot;California&quot;, &quot;Arizona&quot;, &quot;Nevada&quot;,
+      &quot;Colorado&quot;, &quot;Utah&quot;, &quot;Wyoming&quot;, &quot;New Mexico&quot;
+    ],
+    &quot;tribal_pathway_required&quot;: true,
+    &quot;environmental_floor_required&quot;: true
+  },
+
+  &quot;output&quot;: {
+    &quot;generate_zopa_report&quot;:      true,
+    &quot;generate_coalition_report&quot;: true,
+    &quot;generate_stress_test&quot;:      true,
+    &quot;report_format&quot;:             &quot;json&quot;,
+    &quot;save_transcripts&quot;:          true
+  }
+}</code></pre></details>
+
+  <p class="note">No simulation results are shown yet: the package ships with an empty output folder, so there are no runs to report. Next step is running it, then posting the real results here.</p>
+</section>
+
 <section id="methods">
-  <h2>Methods, simplifications, sources</h2>
+  <h2>Methods, simplifications, and AI disclosure</h2>
   <h3>Implemented from the published Model Guide</h3>
   <ul class="tight">
     <li>Accounts: Reclamation, California, Arizona, Nevada, Mexico, Tribal Nations of the Lower Basin (Guide Step 1).</li>
@@ -198,32 +3643,15 @@
     <li>Protection elevation is fixed at session start (1,020 or 1,000 ft). Mid-session changes are possible in the full model.</li>
     <li>Only two price points are documented in the Guide: about $400/af (500-Plus Plan, $200M for 0.5 maf/yr) and the $500/af worked trade example. Any price entered in play is the player's or AI's own choice within the 0–10,000 $/af bound — an illustration of the mechanism, not a documented or predicted price.</li>
     <li>The Participant dashboard tab mirrors the per-account spreadsheet layout from David Rosenberg's session walkthrough (salmon input cells; starting available water, compensation, net-trade tracker, available water, and end-of-year balance computed live). Differences from his sheet, by design: price is entered unsigned with compensation signed by direction (his example slide signs the price cell and its California row contradicts its own annotated formula Compensation = Price × Volume); matched trades must agree on one price (his sheet checks only that volumes net to zero); each account enters one net volume rather than per-trade columns; and Reclamation's protection volume stays fixed rather than being played.</li>
-    <li>Role briefs, hard lines, and would-trade positions (shown in the player panels and the Live AI bridge prompt) are built from cited public sources on the real parties' documented positions - see Position sources below. Where a game rule goes beyond what a source states, the text marks it as the author's inference. Every quantity on this page comes from the Model Guide (4.4 / 2.8 / 0.3 / 1.5 / 0.95 MAF allocations, Table 1a/4a shortage shares, 0.47 of 0.95 MAF tribal settled rights currently used - Ten Tribes Partnership 2018). The author's first-draft scenario positions and their figures (his April 2026 design) were removed at the author's direction in November 2026 and are not used anywhere on this page.</li>
+    <li>Role briefs, hard lines, and would-trade positions (shown in the player panels and the Live AI bridge prompt) are built from cited public sources on the real parties' documented positions, detailed in the author's bibliography. Where a game rule goes beyond what a source states, the text marks it as the author's inference. Every quantity on this page comes from the Model Guide (4.4 / 2.8 / 0.3 / 1.5 / 0.95 MAF allocations, Table 1a/4a shortage shares, 0.47 of 0.95 MAF tribal settled rights currently used - Ten Tribes Partnership 2018). The author's first-draft scenario positions and their figures (his April 2026 design) were removed at the author's direction in November 2026 and are not used anywhere on this page.</li>
     <li>Hard-line checks flag but never block: when a settled move crosses a player's stated hard line, the year result and the history table mark it. The Positions and stated reasons table doubles as the negotiation log from the author's Rule 4(f) game design (positions, concessions, stated reasons, hard-line crossings, per year) and exports as JSON via "Copy session log".</li>
     <li>What a session can and cannot show: it shows where each played position moved year to year (withdrawals, trades, prices), what the players said drove each move, and where hard lines held or broke - raw material for discussing a zone of possible agreement. It does not show what real states, Mexico, or Tribal Nations would do: roles are played by people or by one AI conversation from simplified sourced briefs, and AI rationales are self-reported, not observed motives.</li>
-  </ul>
-  <h3>Position sources (role briefs and hard lines)</h3>
-  <ul class="tight">
-    <li>California: Colorado River Board of California, "California Water Agencies Submit Colorado River Modeling Framework to Bureau of Reclamation," Jan 31, 2023 - voluntary 400,000 AF/yr conservation through 2026 within the existing Law of the River. <a href="https://crb.ca.gov/2023/01/california-water-agencies-submit-colorado-river-modeling-framework-to-bureau-of-reclamation/">crb.ca.gov</a>. Reuters, "US proposes deep Colorado River water cuts for Arizona, California, Nevada," Jul 31, 2026. <a href="https://www.reuters.com/legal/litigation/us-presents-colorado-river-water-sharing-plan-2026-07-31/">reuters.com</a></li>
-    <li>California sales precedent: Imperial Irrigation District, "QSA - Water Transfer" <a href="https://www.iid.com/water/library/qsa-water-transfer">iid.com</a>; San Diego County Water Authority, "Quantification Settlement Agreement" fact sheet <a href="https://www.sdcwa.org/wp-content/uploads/2023/05/qsa-fs.pdf">sdcwa.org</a> - 2003 long-term conserved-water transfer, IID to San Diego.</li>
-    <li>Arizona: U.S. Bureau of Reclamation, Arizona v. California background - in the 1968 Colorado River Basin Project Act, Arizona agreed California's water has priority over CAP water in shortages. <a href="https://www.usbr.gov/lc/phoenix/AZ100/1960/background_us_supreme_court_decision.html">usbr.gov</a>. Lower Basin Drought Contingency Plan Agreement, 2019. <a href="https://www.usbr.gov/dcp/docs/final/Attachment-B-LB-DCP-Agreement-Final.pdf">usbr.gov</a></li>
-    <li>Nevada: Southern Nevada Water Authority, "What We're Doing to Conserve" (accessed Nov 2026) - per-capita use down 58% from 2002 to 2025. <a href="https://www.snwa.com/water-resources/conservation-initiatives/">snwa.com</a>. SNWA Water Resource Plan 2026, Chapter 3 - 300,000 AFY apportionment and banking. <a href="https://www.snwa.com/assets/pdf/water-resource-plan-chapter-3-2026.pdf">snwa.com</a></li>
-    <li>Mexico: IBWC, Minute 323, "Extension of Cooperative Measures and Adoption of a Binational Water Scarcity Contingency Plan," Sep 21, 2017. <a href="https://www.ibwc.gov/wp-content/uploads/2023/03/Min323.pdf">ibwc.gov</a>. U.S. Bureau of Reclamation, "Signing of Minute 334 between the United States and Mexico on Colorado River Operations for 2027 and 2028," Sep 9, 2026 - Minute 334 signed Sep 2, 2026, cooperative measures through Dec 31, 2028. <a href="https://www.usbr.gov/newsroom/news-release/5410">usbr.gov</a></li>
-    <li>Tribal Nations: U.S. Bureau of Reclamation and Ten Tribes Partnership, Colorado River Basin Ten Tribes Partnership Tribal Water Study, Dec 2018. <a href="https://www.usbr.gov/lc/region/programs/crbstudy/tribalwaterstudy.html">usbr.gov</a>. Gila River Indian Community, "GRIC signs historic DCP agreements," Jun 7, 2019 <a href="https://www.gricnews.org/index.php/grin-articles/2019-articles/june-07-2019-articles/gila-river-indian-community-signs-historic-dcp-agreements">gricnews.org</a>; Arizona Daily Star (Tucson.com), "Gila River Community reaches deal with Arizona over drought plan" - 500,000 AF for $60 million. <a href="https://tucson.com/news/state-and-regional/article_ce39fb85-b7bb-5b0f-8973-7dc2239a9d6f.html">tucson.com</a></li>
-    <li>Framework: U.S. Bureau of Reclamation, Record of Decision, 2007 Interim Guidelines for Lower Basin Shortages, Dec 2007. <a href="https://www.usbr.gov/lc/region/programs/strategies/RecordofDecision.pdf">usbr.gov</a>. Post-2026 Operational Guidelines and Strategies for Lake Powell and Lake Mead - Record of Decision (Decision Framework 2027-2036), signed Aug 21, 2026. <a href="https://www.usbr.gov/ColoradoRiverBasin/post2026/decision-doc/P26_RecordofDecision_Final.pdf">usbr.gov</a>; <a href="https://www.usbr.gov/newsroom/news-release/5392">news release</a></li>
-    <li>Current negotiations: Lower Division States' Proposal for 2026-2028 Colorado River Operations, May 1, 2026 (California, Arizona, Nevada). <a href="https://crb.ca.gov/wp-content/uploads/2026/05/20260501-lower-division-states-proposal-2026-2028.pdf">crb.ca.gov</a></li>
   </ul>
   <h3>AI disclosure</h3>
   <ul class="tight">
     <li>Manual mode: every decision is entered by the human player, as in the original model.</li>
     <li>Live AI bridge: one AI conversation writes the five user roles' decisions per year via a copy/paste bridge (the page makes no autonomous AI calls) - LLM role-play of every role in a single conversation, not independent agents. Rationales are self-reported. The Reclamation account is fixed. The page validates every number and computes all accounting itself.</li>
     <li>This page was built with AI assistance. It is a teaching artifact, not water law and not policy findings.</li>
-  </ul>
-  <h3>Sources</h3>
-  <ul class="tight">
-    <li>Rosenberg, D.E. &amp; Myers, A. (2025). <i>Model Guide: Immersive Model for Lake Mead Based on the Principle of Divide Reservoir Inflow.</i> Utah State University. <a href="https://github.com/dzeke/ColoradoRiverCollaborate/blob/main/LakeMeadWaterBankDivideInflow/ModelGuide/ModelGuide-LakeMeadWaterBank.md">Model Guide</a> · <a href="https://github.com/dzeke/ColoradoRiverCollaborate/tree/main/LakeMeadWaterBankDivideInflow">repository</a> (BSD 3-Clause license).</li>
-    <li>USBR, <i>Lake Mead Area and Capacity Tables</i> (2001/2009 surveys): <a href="https://www.usbr.gov/lc/region/g4000/LM_AreaCapacityTables2009.pdf">usbr.gov/lc/region/g4000/LM_AreaCapacityTables2009.pdf</a></li>
-    <li>USBR, Lake Mead monthly elevations: <a href="https://www.usbr.gov/lc/region/g4000/hourly/mead-elv.html">usbr.gov/lc/region/g4000/hourly/mead-elv.html</a> (Oct 2026 snapshot, page updated Nov 2, 2026).</li>
   </ul>
 </section>
 
