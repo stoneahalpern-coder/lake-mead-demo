@@ -1,0 +1,6 @@
+# Lightweight install for the OpenAI path (run_scenario.py).
+# Works on macOS, Windows and Linux with Python 3.10+; no GPU needed.
+# For the local GPU path (main.py + vLLM), install requirements.txt instead.
+openai>=1.30.0
+python-dotenv>=1.0.0
+python-docx>=1.1.0
