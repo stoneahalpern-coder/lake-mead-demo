@@ -816,6 +816,7 @@ Respond ONLY with a valid JSON object — no preamble, no markdown:
             max_tokens=MAX_TOKENS_PER_CALL,
             temperature=0.7,
             response_format={"type": "json_object"},
+            **({"extra_body": {"reasoning_effort": "low"}} if "gpt-oss" in _active_model else {}),  # gpt-oss reasons; low effort leaves room for JSON within max_tokens
         )
 
         raw_text = response.choices[0].message.content
