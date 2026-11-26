@@ -59,20 +59,40 @@ class Budget:
         with self.lock:
             self._roll(); return None if self.token_cap is None else self.token_cap - self.tokens
 
+# Token-window guard. The free plan allows 8000 tokens per rolling minute (provider
+# x-ratelimit-limit-tokens header, verified 2026-11-26). Fixed spacing alone cannot bound a
+# minute window: two calls 50s apart can land in the same window. Before each call we wait
+# until the estimated tokens of every call in the last TPM_WINDOW_SECONDS, plus this call's
+# estimate, fit in TPM_WINDOW_BUDGET (75% of the provider cap). The estimate uses the server's
+# own basis: prompt chars/4 + the configured max_tokens allowance, which overstates observed
+# real usage (prompt 2338 est vs 2056 actual; completion 2000 allowed vs 204 actual), so the
+# guard stays conservative even where the heuristic drifts.
+TPM_WINDOW_SECONDS = 60
+TPM_WINDOW_BUDGET = 6000
+
 class _Completions:
     def __init__(self, real, budget, pace, state):
         self.real, self.budget, self.pace, self.state, self._last = real, budget, pace, state, 0.0
+        self._win = []   # (timestamp, estimated tokens) of recent calls
     def create(self, **kw):
         if self.state.get("cancel"): raise RuntimeError("run cancelled")
+        est = len(json.dumps(kw.get("messages", []))) // 4 + int(kw.get("max_tokens") or 500)   # estimate, chars/4
+        while True:
+            now = time.time()
+            self._win = [(t, e) for (t, e) in self._win if now - t < TPM_WINDOW_SECONDS]
+            if sum(e for _, e in self._win) + est <= TPM_WINDOW_BUDGET or not self._win:
+                break
+            time.sleep(max(self._win[0][0] + TPM_WINDOW_SECONDS - now, 1))
         wait = self._last + self.pace - time.time()
         if wait > 0: time.sleep(wait)
-        est = len(json.dumps(kw.get("messages", []))) // 4 + int(kw.get("max_tokens") or 500)   # estimate, chars/4
+        self._win.append((time.time(), est))
         self.budget.take(est)
         self._last = time.time()
         self.state["requests"] = self.state.get("requests", 0) + 1
         resp = self.real.chat.completions.create(**kw)
         used = getattr(getattr(resp, "usage", None), "total_tokens", None)
         if isinstance(used, int): self.budget.add_actual(used, est)
+        print(f"  [usage] request {self.state.get('requests')}: {used if isinstance(used, int) else '?'} tokens actual (est {est})", flush=True)
         return resp
 
 class GuardedClient:
@@ -148,7 +168,7 @@ Rounds: <select id=r><option>1<option selected>2</select>
 <p id=m>Idle.</p><div id=o></div><p style='font-size:13px'>Flags: <b>replaced</b> = the model reply was unusable and the code substituted a value, so it is not model output. <b>capped</b> = the ask was above the agent's code ceiling and was cut to it.</p>
 <script>
 async function go(){let b=JSON.stringify({code:c.value,rounds:r.value,supply:s.value});
- let x=await fetch('/run',{method:'POST',body:b});let j=await x.json();m.textContent=x.ok?'Started. One round takes a few minutes.':j.error;poll()}
+ let x=await fetch('/run',{method:'POST',body:b});let j=await x.json();m.textContent=x.ok?'Started. One round takes about 10 to 15 minutes on the free plan's pacing.':j.error;poll()}
 async function poll(){let j=await (await fetch('/status')).json();
  m.textContent=j.status+(j.rounds_total?` - round ${j.rounds_done} of ${j.rounds_total}, ${j.requests} requests`:'')+(j.error?' - '+j.error:'');
  let h='';if(j.status=='stopped')h+='<p class=w>Run stopped early. Only completed rounds are shown and this is not a full run.</p>';if(j.validity)h+=`<p>Reply check: ${j.validity.replies} replies, ${j.validity.replaced_or_defaulted} replaced, ${j.validity.clamped_to_ceiling} capped to code ceiling.</p>`;if(j.warning)h+='<p class=w>'+j.warning+'</p>';
