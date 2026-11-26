@@ -199,10 +199,14 @@ table{border-collapse:collapse;width:100%;table-layout:fixed}td,th{border-bottom
 <p>Supply (million acre-feet, assumed): <select id=s><option>9.0<option selected>11.0<option>13.0</select>
 Rounds: <select id=r><option>1<option selected>2</select>
 <input id=c placeholder="access code" type=password> <button onclick=go()>Run</button></p>
-<p id=m>Idle.</p><div id=o></div><p style='font-size:13px'>Flags: <b>replaced</b> = the model reply was unusable and the code substituted a value, so it is not model output. <b>capped</b> = the ask was above the agent's code ceiling and was cut to it.</p>
+<p id=m>Idle.</p><p id=e role=alert style='color:#b00020;font-weight:bold'></p><div id=o></div><p style='font-size:13px'>Keep this tab open while a run is going: the free host sleeps after 15 minutes without visits, which would stop the run early.</p><p style='font-size:13px'>Flags: <b>replaced</b> = the model reply was unusable and the code substituted a value, so it is not model output. <b>capped</b> = the ask was above the agent's code ceiling and was cut to it.</p>
 <script>
 async function go(){let b=JSON.stringify({code:c.value,rounds:r.value,supply:s.value});
- let x=await fetch('/run',{method:'POST',body:b});let j=await x.json();m.textContent=x.ok?'Started. One round takes about 10 to 15 minutes on the free plan's pacing.':j.error;poll()}
+ e.textContent='';
+ try{let x=await fetch('/run',{method:'POST',body:b});let j=await x.json().catch(()=>({}));
+ if(!x.ok){e.textContent='Not started: '+(j.error||('server returned '+x.status));return}
+ m.textContent='Started. One round takes about 10 to 15 minutes on free-plan pacing.';poll()}
+ catch(err){e.textContent='Not started: network error - please try again.'}}
 async function poll(){let j=await (await fetch('/status')).json();
  m.textContent=j.status+(j.rounds_total?` - round ${j.rounds_done} of ${j.rounds_total}, ${j.requests} requests`:'')+(j.error?' - '+j.error:'');
  let h='';if(j.status=='stopped')h+='<p class=w>Run stopped early. Only completed rounds are shown and this is not a full run.</p>';if(j.validity)h+=`<p>Reply check: ${j.validity.replies} replies, ${j.validity.replaced_or_defaulted} replaced, ${j.validity.clamped_to_ceiling} capped to code ceiling.</p>`;if(j.warning)h+='<p class=w>'+j.warning+'</p>';
