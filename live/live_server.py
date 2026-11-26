@@ -62,36 +62,70 @@ class Budget:
 # Token-window guard. The free plan allows 8000 tokens per rolling minute (provider
 # x-ratelimit-limit-tokens header, verified 2026-11-26). Fixed spacing alone cannot bound a
 # minute window: two calls 50s apart can land in the same window. Before each call we wait
-# until the estimated tokens of every call in the last TPM_WINDOW_SECONDS, plus this call's
-# estimate, fit in TPM_WINDOW_BUDGET (75% of the provider cap). The estimate uses the server's
-# own basis: prompt chars/4 + the configured max_tokens allowance, which overstates observed
-# real usage (prompt 2338 est vs 2056 actual; completion 2000 allowed vs 204 actual), so the
-# guard stays conservative even where the heuristic drifts.
+# until the ACTUAL provider-counted tokens of every call in the last TPM_WINDOW_SECONDS
+# (from response.usage), plus this call's conservative estimate, fit in TPM_WINDOW_BUDGET
+# (75% of the provider cap). Any two calls within 60s of each other share this window, so
+# it bounds any provider window of <=60s regardless of phase. The estimate uses a real
+# tokenizer (tiktoken o200k, the gpt-oss base encoding) plus per-message overhead and the
+# full configured completion allowance. A single request whose estimate alone exceeds the
+# budget is rejected visibly (never waited out or silently replaced), as is a window that
+# stays full past TPM_MAX_WAIT_SECONDS.
 TPM_WINDOW_SECONDS = 60
 TPM_WINDOW_BUDGET = 6000
+TPM_MAX_WAIT_SECONDS = int(os.environ.get("TPM_MAX_WAIT_SECONDS", "180"))
+
+try:
+    import tiktoken
+    _ENC = tiktoken.get_encoding("o200k_base")   # base encoding of gpt-oss (o200k_harmony)
+except Exception:   # Render installs tiktoken; this fallback is for local dev only
+    _ENC = None
+
+class WindowBudgetExceeded(RuntimeError):
+    """Surfaces as a visibly incomplete reply, never a silent replacement."""
+
+def _estimate_call_tokens(messages, max_tokens):
+    if _ENC is not None:
+        n = 2
+        for m in messages:
+            n += 4
+            for key in ("role", "name", "content"):
+                n += len(_ENC.encode(str(m.get(key) or "")))
+    else:
+        n = 2 + sum((len(str(m.get("content") or "")) + 16) // 3 + 4 for m in messages)
+    return n + int(max_tokens)
 
 class _Completions:
     def __init__(self, real, budget, pace, state):
         self.real, self.budget, self.pace, self.state, self._last = real, budget, pace, state, 0.0
-        self._win = []   # (timestamp, estimated tokens) of recent calls
+        self._win = []   # (timestamp, actual provider-counted tokens) of recent calls
     def create(self, **kw):
         if self.state.get("cancel"): raise RuntimeError("run cancelled")
-        est = len(json.dumps(kw.get("messages", []))) // 4 + int(kw.get("max_tokens") or 500)   # estimate, chars/4
+        est = _estimate_call_tokens(kw.get("messages", []), kw.get("max_tokens") or 500)
+        if est > TPM_WINDOW_BUDGET:
+            raise WindowBudgetExceeded(
+                f"single request estimate {est} tokens exceeds window budget {TPM_WINDOW_BUDGET}")
+        waited = 0.0
         while True:
             now = time.time()
             self._win = [(t, e) for (t, e) in self._win if now - t < TPM_WINDOW_SECONDS]
-            if sum(e for _, e in self._win) + est <= TPM_WINDOW_BUDGET or not self._win:
+            if sum(e for _, e in self._win) + est <= TPM_WINDOW_BUDGET:
                 break
-            time.sleep(max(self._win[0][0] + TPM_WINDOW_SECONDS - now, 1))
+            sleep_for = max(self._win[0][0] + TPM_WINDOW_SECONDS - now, 1)
+            if waited + sleep_for > TPM_MAX_WAIT_SECONDS:
+                raise WindowBudgetExceeded(
+                    f"token window still full after {waited:.0f}s (used {sum(e for _, e in self._win)}, need {est})")
+            print(f"  [pace] token window full; waiting {sleep_for:.0f}s", flush=True)
+            time.sleep(sleep_for)
+            waited += sleep_for
         wait = self._last + self.pace - time.time()
         if wait > 0: time.sleep(wait)
-        self._win.append((time.time(), est))
         self.budget.take(est)
         self._last = time.time()
         self.state["requests"] = self.state.get("requests", 0) + 1
         resp = self.real.chat.completions.create(**kw)
         used = getattr(getattr(resp, "usage", None), "total_tokens", None)
         if isinstance(used, int): self.budget.add_actual(used, est)
+        self._win.append((time.time(), used if isinstance(used, int) else est))
         print(f"  [usage] request {self.state.get('requests')}: {used if isinstance(used, int) else '?'} tokens actual (est {est})", flush=True)
         return resp
 
