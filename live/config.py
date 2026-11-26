@@ -20,7 +20,7 @@ MODEL = "gpt-4o-mini"
 
 # Max tokens the LLM can use per agent response.
 # 500 is enough for a well-reasoned JSON proposal without burning tokens.
-MAX_TOKENS_PER_CALL = 500
+MAX_TOKENS_PER_CALL = 2000
 
 # ── Simulation ────────────────────────────────────────────────────────────────
 # Total LLM calls per run = NUM_SIMULATIONS × NUM_ROUNDS_PER_SIM × 13 agents.
